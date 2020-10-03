@@ -1,0 +1,26 @@
+{
+	"CTD":{
+		"Uart":{
+			"Baudrate":9600,
+			"Bits":8,
+			"Parity":"None",
+			"Stop":1,
+			"Timeout":10,
+			"Timeout_Char":10,
+			"Flow_Control":0,
+			"Read_Buf_Len":256,
+			"Write_Buf_Len":256,
+			"Read_Char_Attempt":10
+		},
+		"Warmup_Interval":30,
+		"Samples":1,
+		"Sample_Rate":1,
+		"String_Label":"$METRECXR",
+		"Ctd":{
+			"Prompt_Timeout":60
+		}
+	},
+	"UV":{
+		"Warmup_Interval":300
+	}
+}
