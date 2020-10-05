@@ -113,7 +113,7 @@ class YMODEM:
             bkp = self.file.replace(self.file.split('/')[-1], self.bkp_pfx + self.file.split('/')[-1])
             async with lock:
                 shutil.copyfile(self.file, bkp)
-                return bkp
+            return bkp
 
         def filename_pkt_hdr():
             b = []
@@ -216,7 +216,7 @@ class YMODEM:
             self.filename = self.file.split('/')[-1]
             if self.file != '\x00':
                 self.filename = cfg.HOSTNAME.lower() + '/' + self.file.split('/')[-1]  # Adds system name to filename.
-                if self.file.split('/')[-1] == str(eval(cfg.DATA_FILE)):
+                if self.file.split('/')[-1] == cfg.DATA_FILE:
                     self.file = await bkp_file(lock)
                 #try:
                 #    stream = open(self.file)

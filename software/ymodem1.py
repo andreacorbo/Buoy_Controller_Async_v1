@@ -415,7 +415,7 @@ class YMODEM:
             _thread.start_new_thread(file_sender, (file,))
             await asyncio.sleep_ms(100)
             while self.event.locked():
-                print(utils.timestring(time.time()), 'modem')
+                print(utils.iso8601(time.time()), 'modem')
                 await asyncio.sleep(1)
             if self.failed:
                 return False

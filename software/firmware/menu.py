@@ -183,7 +183,7 @@ async def data_files():
     for f in data:
         stat = os.stat(dfl.DATA_DIR + "/" + f)
         size += stat[6]//1024
-        _.append("{: <5} {: <20} {}".format(str(stat[6]//1024), utils.timestring(stat[7]), f))
+        _.append("{: <5} {: <20} {}".format(str(stat[6]//1024), utils.iso8601(stat[7]), f))
         await asyncio.sleep(0)
     fsstat = os.statvfs(dfl.DATA_DIR)
     _.append("{} Files {}/{} kB".format(len(data), str(size), str(fsstat[2]*fsstat[0]//1024)))

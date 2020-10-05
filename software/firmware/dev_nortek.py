@@ -30,8 +30,6 @@ class ADCP(DEVICE):
         self.deployment_delay = self.config['Adcp']['Deployment_Delay']
 
     async def start_up(self, **kwargs):
-        self.off()
-        await asyncio.sleep(1)
         self.on()
         self.init_uart()
         await asyncio.sleep(1) # Waits for uart getting ready.
@@ -42,7 +40,7 @@ class ADCP(DEVICE):
                 await self.set_usr_cfg()
                 await self.get_cfg()
                 await self.start_delayed()
-                #await self.parse_cfg()
+                await self.parse_cfg()
                 utils.log(self.__qualname__, 'successfully initialised')
 
     def decode(self):
@@ -366,7 +364,7 @@ class ADCP(DEVICE):
             # Computes the measurement starting time to be in synch with the scheduler.
             now = time.time()
             next_sampling = now - now % sampling_interval + sampling_interval
-            utils.log(self.__qualname__, 'deployment start at {}, measurement interval {}\', average interval {}\''.format(utils.timestring(next_sampling), sampling_interval, avg_interval))
+            utils.log(self.__qualname__, 'deployment start at {}, measurement interval {}\', average interval {}\''.format(utils.iso8601(next_sampling), sampling_interval, avg_interval))
             deployment_start = time.localtime(next_sampling - avg_interval + self.deployment_delay)
             return binascii.unhexlify('{:02d}{:02d}{:02d}{:02d}{:02d}{:02d}'.format(deployment_start[4], deployment_start[5], deployment_start[2], deployment_start[3], int(str(deployment_start[0])[2:]), deployment_start[1]))
 
@@ -524,6 +522,8 @@ class ADCP(DEVICE):
         try:
             record = [
             self.config['String_Label'],
+            '{}'.format(str(utils.unix_epoch(self.ts))),
+            '{}'.format(utils.iso8601(self.ts)),                            # yyyy-mm-ddThh:mm:ssZ (controller)
             '{:2s}/{:2s}/20{:2s}'.format(sample[2], sample[5], sample[4]),  # dd/mm/yyyy
             '{:2s}:{:2s}'.format(sample[3], sample[0]),                     # hh:mm
             '{:.2f}'.format(sample[8]),                                     # Battery
@@ -561,9 +561,10 @@ class ADCP(DEVICE):
         # Scheduled task.
         self.init_uart()
         pyb.LED(3).on()
-        await self.parse_cfg()
+        #await self.parse_cfg()
         try:
             self.data = await asyncio.wait_for(self.sreader.read(1024), self.timeout)
+            self.ts = time.time()
         except asyncio.TimeoutError:
             self.data = b''
             utils.log(self.__qualname__, 'no data received', type='e')

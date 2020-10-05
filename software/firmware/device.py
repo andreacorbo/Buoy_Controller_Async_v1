@@ -19,6 +19,10 @@ class DEVICE:
             self.timeout = self.samples // self.sample_rate + (self.samples % self.sample_rate > 0) + cfg.TIMEOUT
         self.set_uart()
         self.init_gpio()
+        try:
+            self.off()
+        except:
+            pass  # Devices without gpio.
 
     def _timeout(self, start, expire=0):
         if not expire:

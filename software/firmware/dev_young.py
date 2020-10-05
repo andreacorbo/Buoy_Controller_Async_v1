@@ -21,7 +21,6 @@ class METEO(DEVICE):
     async def start_up(self, **kwargs):
         if kwargs and 'sema' in kwargs:
             self.sema = kwargs['sema']
-        self.off()
         async with self.sema:
             self.on()
             self.init_uart()
@@ -206,13 +205,12 @@ class METEO(DEVICE):
         return avg
 
     def log(self):
-        epoch = time.time()
+        self.ts = time.time()
         utils.log_data(
             '{},{},{},{},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:0d},{:.1f}'.format(
                 self.string_label,
-                str(utils.unix_epoch(epoch)),
-                utils.datestamp(epoch),  # MMDDYY
-                utils.timestamp(epoch),  # hhmmss
+                str(utils.unix_epoch(self.ts)),
+                utils.iso8601(self.ts),  # yyyy-mm-ddThh:mm:ssZ (controller)
                 self.wd_vect_avg(),  # vectorial avg wind direction
                 self.ws_avg(),  # avg wind speed
                 self.temp_avg(),  # avg temp
@@ -230,9 +228,8 @@ class METEO(DEVICE):
     async def main(self, lock, tasks=[]):
         async with self.sema:
             self.on()
-            await asyncio.sleep(self.warmup_interval)
             self.init_uart()
-            await asyncio.sleep(1)  # Waits for uart getting ready.
+            await asyncio.sleep(self.warmup_interval)
             pyb.LED(3).on()
             self.data = b''
             t0 = time.time()

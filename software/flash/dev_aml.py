@@ -19,8 +19,6 @@ class CTD(DEVICE):
         self.warmup_interval = self.config['Warmup_Interval']
 
     async def start_up(self, **kwargs):
-        self.off()
-        await asyncio.sleep(1)
         self.on()
         self.init_uart()
         await asyncio.sleep(1)  # Waits for uart getting ready.
@@ -28,11 +26,16 @@ class CTD(DEVICE):
             await self.set('STARTUP NOHEADER')
             await self.set('STARTUP MONITOR')
             await self.set_sample_rate()
-            await self.set_log()
+            await self.set('SCAN TIME')
+            await self.set('SCAN DATE')
+            await self.set('SCAN DENSITY')
+            await self.set('SCAN SALINITY')
+            await self.set('SCAN SV')
             await self.zero()
             if kwargs and 'time_sync' in kwargs:
                 await kwargs['time_sync'].wait()
                 await self.set_clock()
+                await self.set_log()
                 await self.set('SCAN LOGGING')
                 utils.log(self.__qualname__, 'successfully initialised')
         self.uart.deinit()
@@ -53,7 +56,7 @@ class CTD(DEVICE):
         #
         # Sends a break.
         #
-        for _ in range(2):
+        while True:
             await self.swriter.awrite(ENTER)
             try:
                 self.data = await asyncio.wait_for(self.sreader.read(128), self.prompt_timeout)
@@ -63,7 +66,7 @@ class CTD(DEVICE):
             if self.decoded():
                 if self.data.endswith(PROMPT):
                     return True
-            await asyncio.sleep(1)  # TODO: check if 1s is enough
+            await asyncio.sleep_ms(500)  # TODO: check if 1s is enough
         return False
 
     async def set(self, cmd):
@@ -106,14 +109,15 @@ class CTD(DEVICE):
     async def set_clock(self):
         date = None
         time = None
-        if await self.set_time() and await self.set_date():
-            if await self.dis('DATE'):
-                date = self.data[-10:]
-            if await self.dis('TIME'):
-                time = self.data[-11:]
-            utils.log(self.__qualname__,'instrument clock synchronized UTC({} {})'.format(date, time))
-        else:
-            utils.log(self.__qualname__, 'unable to synchronize the instrument clock', type='e')
+        if await self.brk():
+            if await self.set_time() and await self.set_date():
+                if await self.dis('DATE'):
+                    date = self.data[-10:]
+                if await self.dis('TIME'):
+                    time = self.data[-11:]
+                utils.log(self.__qualname__,'instrument clock synchronized {}T{}Z'.format(date, time))
+                return
+        utils.log(self.__qualname__, 'unable to synchronize the instrument clock', type='e')
 
     async def set_date(self):
         CMD = 'DATE'
@@ -151,8 +155,9 @@ class CTD(DEVICE):
         # Corrects the barometric offset to set zero.
         #
         if await self.scan():  # Gets one sample.
-            if float(self.data.split(' ')[7]) < 1:  # Checks conductivity to
-                CMD = 'ZERO'                                        # esablish if in air.
+            self.format_data()
+            if float(self.data[8]) < 1:  # Checks conductivity to
+                CMD = 'ZERO'                         # esablish if in air.
                 await self.swriter.awrite(CMD + ENTER)
                 if await self.reply():
                     if self.data.startswith(CMD):
@@ -161,6 +166,13 @@ class CTD(DEVICE):
                             return
                 utils.log(self.__qualname__, 'unable to zero pressure at surface', type='e')
 
+
+    def format_data(self):
+        tmp = []
+        for _ in self.data[:-2].split(' '):
+            if _ != '':
+                tmp.append(_)
+        self.data = tmp
 
     async def scan(self):
         #
@@ -176,36 +188,35 @@ class CTD(DEVICE):
         return False
 
     def log(self):
-        epoch = time.time()
+        self.ts = time.time()
+        self.format_data()
         utils.log_data(
             dfl.DATA_SEPARATOR.join(
                 [
                     self.config['String_Label'],
-                    str(utils.unix_epoch(epoch)),
-                    utils.datestamp(epoch),  # YYMMDD
-                    utils.timestamp(epoch)  # hhmmssno
+                    str(utils.unix_epoch(self.ts)),
+                    utils.iso8601(self.ts)  # yyyy-mm-ddThh:mm:ssZ (controller)
                 ]
-                + self.data[:-2].split(',')
+                + self.data
             )
         )
 
     async def main(self, lock, tasks=[]):
         self.on()
         self.init_uart()
+        await asyncio.sleep(1)
+        await self.swriter.awrite(ENTER)
+        await asyncio.sleep(self.warmup_interval)
         pyb.LED(3).on()
-        t0 = time.time()
-        while time.time() - t0 <  self.warmup_interval + self.timeout:
-            try:
-                self.data = await asyncio.wait_for(self.sreader.readline(), 2)
-            except asyncio.TimeoutError:
-                self.data = b''
-                utils.log(self.__qualname__, 'no data received', type='e')  # DEBUG
-            if self.data:
-                if self.decoded():
-                    async with lock:
-                        self.log()
-                    break
-            await asyncio.sleep(0)
+        try:
+            self.data = await asyncio.wait_for(self.sreader.readline(), 2)
+        except asyncio.TimeoutError:
+            self.data = b''
+            utils.log(self.__qualname__, 'no data received', type='e')  # DEBUG
+        if self.data:
+            if self.decoded():
+                async with lock:
+                    self.log()
         pyb.LED(3).off()
         self.uart.deinit()
         self.off()
@@ -217,7 +228,7 @@ class UV(DEVICE):
         self.warmup_interval = self.config['Warmup_Interval']
 
     async def start_up(self, **kwargs):
-        self.off()
+        pass
 
     async def main(self, *args):
         self.on()

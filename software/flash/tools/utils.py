@@ -4,10 +4,11 @@ import json
 import os
 import time
 from configs import dfl, cfg
+from primitives.message import Message
 
 logger = True  # Prints out messages.
 
-sms_queue = asyncio.Event()  # Sms event.
+sms = Message()  # Sms event.
 
 def welcome_msg():
     print(
@@ -16,7 +17,7 @@ def welcome_msg():
         'WELCOME TO ' + cfg.HOSTNAME + ' ' + dfl.SW_NAME + ' ' + dfl.SW_VERSION,
         '',
         ' current time:',
-        timestring(time.time()) + ' UTC',
+        iso8601(time.time()),
         ' machine:',
         os.uname()[4],
         ' mpy release:',
@@ -40,17 +41,9 @@ def unix_epoch(epoch):
     # Converts embedded epoch 2000-01-01 00:00:00 to unix epoch 1970-01-01 00:00:00.
     return 946684800 + epoch
 
-def datestamp(epoch):
-    # MMDDYY
-    return '{:02d}{:02d}{:02d}'.format(time.localtime(epoch)[1], time.localtime(epoch)[2], int(str(time.localtime(epoch)[0])[-2:]))
-
-def timestamp(epoch):
-    # HHMMSS
-    return '{:02d}{:02d}{:02d}'.format(time.localtime(epoch)[3], time.localtime(epoch)[4], time.localtime(epoch)[5])
-
-def timestring(timestamp):
+def iso8601(timestamp):
     # YYYY-MM-DD HH:MM:SS
-    return '{}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}'.format(time.localtime(timestamp)[0], time.localtime(timestamp)[1], time.localtime(timestamp)[2], time.localtime(timestamp)[3], time.localtime(timestamp)[4], time.localtime(timestamp)[5])
+    return '{}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}Z'.format(time.localtime(timestamp)[0], time.localtime(timestamp)[1], time.localtime(timestamp)[2], time.localtime(timestamp)[3], time.localtime(timestamp)[4], time.localtime(timestamp)[5])
 
 async def blink(led,dutycycle=50,period=1000, **kwargs):
     while True:
@@ -81,7 +74,7 @@ def log(*args, **kwargs):
     type = 'm'
     if kwargs and 'type' in kwargs:
         type = kwargs['type']
-    timestamp = timestring(time.time())
+    timestamp = iso8601(time.time())
     if logger:  # Global flag.
         print('{: <22}{: <8}{}'.format(timestamp, args[0], ' '.join(map(str, args[1:]))))
     if cfg.LOG_TO_FILE:
@@ -92,19 +85,16 @@ def log(*args, **kwargs):
             except Exception as err:
                 print(err)
 
-def sms(text):
-    try:
-        with open('/sd/sms/sms', 'a') as sms_file:  # append row to existing file
-            sms_file.write('{}\r\n'.format(text))
-        sms_queue.set()
-    except Exception as err:
-        log(type(err).__name__, err, type='e')  # DEBUG
+def set_sms(text):
+    # Set sms text, works one-to-one with smsender.
+    global sms
+    sms.set(text)
 
 def log_data(data):
     try:
         with open(dfl.DATA_DIR + '/' + cfg.DATA_FILE, 'a') as data_file:
-            log(data)
             data_file.write('{}\r\n'.format(data))
+        log(data)
     except Exception as err:
         log(type(err).__name__, err, type='e')  # DEBUG
 

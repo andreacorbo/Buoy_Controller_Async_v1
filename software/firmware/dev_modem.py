@@ -30,8 +30,6 @@ class MODEM(DEVICE, YMODEM):
         YMODEM.__init__(self, self.agetc, self.aputc, dfl.TMP_FILE_PFX, dfl.SENT_FILE_PFX, dfl.BKP_FILE_PFX, mode='Ymodem1k')
 
     async def start_up(self, **kwargs):
-        self.off()
-        await asyncio.sleep(1)
         self.on()
         self.init_uart()
         if await self.is_ready():
@@ -176,14 +174,14 @@ class MODEM(DEVICE, YMODEM):
             self.init_uart()
             for at in self.sms_ats:
                 if not await self.cmd(at):
-                    utils.log(self.__qualname__,'sms failed')
+                    utils.log(self.__qualname__,'sms failed', at)
                     return False
                 await asyncio.sleep(self.at_delay)
             await self.swriter.awrite(self.sms_to)
             try:
                 self.data = await asyncio.wait_for(self.sreader.readline(), self.reply_timeout)
             except asyncio.TimeoutError:
-                utils.log(self.__qualname__,'sms failed')
+                utils.log(self.__qualname__,'sms failed', self.sms_to)
                 return False
             if self.data.startswith(self.sms_to):
                 utils.verbose(self.data)
@@ -194,9 +192,9 @@ class MODEM(DEVICE, YMODEM):
                     return False
                 if self.data.startswith('>'):
                     utils.verbose(self.data)
-                    await self.swriter.awrite(text)
+                    await self.swriter.awrite(text+'\r')
                     try:
-                        self.data = await asyncio.wait_for(self.sreader.readline(), self.reply_timeout)
+                        self.data = await asyncio.wait_for(self.sreader.readline(), 60)
                     except asyncio.TimeoutError:
                         utils.log(self.__qualname__,'sms failed')
                         return False
@@ -206,21 +204,3 @@ class MODEM(DEVICE, YMODEM):
                             return True
             utils.log(self.__qualname__,'sms failed')
             return False
-
-
-'''x=open('/sd/sms/sms','w')
-x.write('prova ' + u'\u00B0' +' \r\n')
-x=open('/sd/sms/sms')
-print(x.read())
-time.sleep(15)
-try:
-    os.remove('/sd/sms/.sms')
-except:
-    pass
-utils.sms_queue.set()
-asyncio.run(smsender())
-modem.on()
-modem.init_uart()
-asyncio.run(modem.sms("u\u00B0 \r\n".encode(),m_semaphore))
-modem.uart.write('\u00B0')
-'''

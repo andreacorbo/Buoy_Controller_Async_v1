@@ -45,7 +45,7 @@ class SYSMON(DEVICE):
         try:
             return vout * self.config['Adc']['Channels']['Current_Level']['Calibration_Coeff']
         except Exception as err:
-            utils.log(self.__qualname__, 'current_level', type(err).__name__, err, type='e')  
+            utils.log(self.__qualname__, 'current_level', type(err).__name__, err, type='e')
         return 0
 
     def fs_freespace(self):
@@ -53,18 +53,17 @@ class SYSMON(DEVICE):
             s=os.statvfs('/sd')
             return s[0]*s[3]
         except Exception as err:
-            utils.log(self.__qualname__, 'fs_freespace', type(err).__name__, err, type='e')  
+            utils.log(self.__qualname__, 'fs_freespace', type(err).__name__, err, type='e')
         return 0
 
     def log(self):
-        epoch = time.time()
+        self.ts = time.time()
         utils.log_data(
             dfl.DATA_SEPARATOR.join(
                 [
                     self.config['String_Label'],
-                    str(utils.unix_epoch(epoch)),
-                    utils.datestamp(epoch),  # MMDDYY
-                    utils.timestamp(epoch),  # hhmmss
+                    str(utils.unix_epoch(self.ts)),
+                    utils.iso8601(self.ts),  # yyyy-mm-ddThh:mm:ssZ (controller)
                     '{:.4f}'.format(self.battery_level(self.data[0])),  # Battery voltage [V].
                     '{:.4f}'.format(self.current_level(self.data[1])),  # Current consumption [A].
                     '{:.4f}'.format(self.ad22103(self.data[2], self.data[6])),  # Internal vessel temp [°C].

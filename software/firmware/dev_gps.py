@@ -18,11 +18,12 @@ class GPS(DEVICE):
         self.displacement = 0
 
     async def start_up(self, **kwargs):
-        self.off()
         if kwargs and  'time_sync' in kwargs:
             self.time_sync = kwargs['time_sync']
         if kwargs and 'sema' in kwargs:
             self.sema = kwargs['sema']
+        async with self.sema:
+            self.on()
         for _ in range(2):
             await self.main(None, tasks=['sync_rtc'])
             if self.time_sync.is_set():
@@ -53,25 +54,25 @@ class GPS(DEVICE):
         a = sin((last_lat - prev_lat) / 2)**2 + cos(prev_lat) * cos(last_lat) * sin((last_lon - prev_lon) / 2)**2
         c = 2 * atan2(sqrt(a), sqrt(1 - a))
         self.displacement =  R * c
-        if self.displacement > cfg.DISPLACEMENT_THRESHOLD:
-            fix = self.data.split(',')
-            utils.sms("{}-{}-{} {}:{}:{}UTC !ALERT-{}! pos {}{}'{} {}{}'{}, cog {}, sog {}kn, {:.3f}nm away from prev. pos. next msg in 5'".format(
-            int(fix[9][-2:])+2000,
-            fix[9][2:4],
-            fix[9][0:2],
-            fix[1][0:2],
-            fix[1][2:4],
-            fix[1][4:6],
+        if self.displacement > cfg.DISPLACEMENT_THRESHOLD and float(last[7]) > 0:
+            utils.set_sms('{}-{}-{}T{}:{}:{}Z ***ALERT*** {} is {:.3f}nm ({}m) away from prev. pos. (coord {}{}\'{} {}{}\'{}, cog {}, sog {}kn) next msg in 5\''.format(
+            int(last[9][-2:])+2000,
+            last[9][2:4],
+            last[9][0:2],
+            last[1][0:2],
+            last[1][2:4],
+            last[1][4:6],
             cfg.HOSTNAME,
-            fix[3][0:2],
-            fix[3][2:],
-            fix[4],
-            fix[5][0:3],
-            fix[5][3:],
-            fix[6],
-            fix[8],
-            fix[7],
-            self.displacement))
+            self.displacement,
+            int(self.displacement*1852),
+            last[3][0:2],
+            last[3][2:],
+            last[4],
+            last[5][0:3],
+            last[5][3:],
+            last[6],
+            last[8],
+            last[7]))
 
     def sync_rtc(self):
         utc_time = self.data.split(',')[1]
@@ -101,12 +102,12 @@ class GPS(DEVICE):
             self.data = self.data.decode('utf-8')
             return True
         except UnicodeError:
-            utils.log(self.__qualname__, 'communication error')
+            utils.log(self.__qualname__, 'communication error', self.data)
             return False
 
     async def main(self, lock, tasks=[]):
         async with self.sema:
-            self.on()
+            #self.on()
             self.init_uart()
             self.time_sync.clear()
             t0 = time.time()
@@ -135,5 +136,8 @@ class GPS(DEVICE):
                     self.data = rmc[:-2]
                     async with lock:
                         self.log()
-            self.uart.deinit()
-            self.off()
+            self.uart.deinit()  # Releases the uart to the meteo.
+            self.off()  # Switches off itself to avoid conflicts with the meteo.
+        await asyncio.sleep(1)
+        async with self.sema:
+            self.on()  # Powers on itself again as soon as the meteo task ends.
