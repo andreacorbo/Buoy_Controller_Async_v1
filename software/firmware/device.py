@@ -1,6 +1,6 @@
 import pyb
 import time
-import tools.utils as utils
+from tools.utils import log, read_cfg
 from configs import dfl, cfg
 
 class DEVICE:
@@ -28,16 +28,16 @@ class DEVICE:
         if not expire:
             expire = cfg.TIMEOUT
         if expire > 0 and time.time() - start >= expire:
-            utils.log(self.__qualname__, 'timeout occurred', type='e')
+            log(self.__qualname__, 'timeout occurred', type='e')
             return True
         return False
 
     def get_config(self):
         try:
-            self.config = utils.read_cfg(self.__module__)[self.__qualname__]
+            self.config = read_cfg(self.__module__)[self.__qualname__]
             return self.config
         except Exception as err:
-            utils.log(self.__qualname__, type(err).__name__, err, type='e')
+            log(self.__qualname__, type(err).__name__, err, type='e')
 
     def set_uart(self):
         if 'Uart' in self.config:
@@ -45,7 +45,7 @@ class DEVICE:
             try:
                 self.uart = pyb.UART(self.uart_bus, int(self.config['Uart']['Baudrate']))
             except Exception as err:
-                utils.log(self.__qualname__, type(err).__name__, err, type='e')
+                log(self.__qualname__, type(err).__name__, err, type='e')
 
     def init_uart(self):
         if self.uart:
@@ -59,7 +59,7 @@ class DEVICE:
                     timeout_char=int(self.config['Uart']['Timeout_Char']),
                     read_buf_len=int(self.config['Uart']['Read_Buf_Len']))
             except Exception as err:
-                utils.log(self.__qualname__, type(err).__name__, err, type='e')
+                log(self.__qualname__, type(err).__name__, err, type='e')
 
     def init_gpio(self):
         try:
@@ -67,17 +67,17 @@ class DEVICE:
         except IndexError:
             pass  # device has no gpio
         except Exception as err:
-            utils.log(self.__qualname__, type(err).__name__, err, type='e')
+            log(self.__qualname__, type(err).__name__, err, type='e')
 
     def on(self):
         if hasattr(self, 'gpio'):
             self.gpio.on()  # set pin to off
-        utils.log(self.__qualname__,dfl.STATUS[self.gpio.value()])
+        log(self.__qualname__,dfl.STATUS[self.gpio.value()])
 
     def off(self):
         if hasattr(self, 'gpio'):
             self.gpio.off()  # set pin to off
-        utils.log(self.__qualname__,dfl.STATUS[self.gpio.value()])
+        log(self.__qualname__,dfl.STATUS[self.gpio.value()])
 
     def toggle(self):
         if hasattr(self, 'gpio'):

@@ -2,8 +2,8 @@ import uasyncio as asyncio
 import pyb
 import os
 import select
-import tools.utils as utils
-from configs import dfl,cfg
+from tools.utils import scheduling, logger, read_cfg, iso8601
+from configs import dfl, cfg
 
 interactive = False
 
@@ -12,7 +12,7 @@ BACKSPACE = b'\x7f\x08'
 RETURN = b'\x0d'
 SPACE = b'\x20'
 
-async def main(msg,uart,objs,scheduling):
+async def main(msg,uart,objs):
     global interactive
     board = False
     devices = False
@@ -34,7 +34,7 @@ async def main(msg,uart,objs,scheduling):
                         dev.toggle()
                         await device_menu(dev)
                     elif  msg.value() == b'1':
-                        await pass_through(dev,uart,scheduling)
+                        await pass_through(dev,uart,utils.scheduling)
                         await device_menu(dev)
                     elif  msg.value() == b'2':
                         pass
@@ -130,8 +130,8 @@ async def get_config(obj):
     _.append("\r")
     print("\r\n".join(_))
 
-async def pass_through(obj,uart,scheduling):
-    scheduling.clear()
+async def pass_through(obj,uart):
+    utils.scheduling.clear()
     print('[P] PAUSE/RESUME\r\n[BACKSPACE] BACK\r\n')
     running = asyncio.Event()  # manages scheduler.
     running.set()  # enable scheduler
@@ -152,7 +152,7 @@ async def pass_through(obj,uart,scheduling):
             if stream[0] in [uart,pyb.USB_VCP()]:
                 if byte in BACKSPACE:  # [BACKSPACE] Backs to previous menu.
                     obj.uart.deinit()
-                    scheduling.set()
+                    utils.scheduling.set()
                     return
                 elif byte == SPACE:  # [BACKSPACE] Backs to previous menu.
                     if running.is_set():

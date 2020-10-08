@@ -3,7 +3,7 @@ import time
 import os
 import _thread
 from tools.functools import partial
-import tools.utils as utils
+from tools.utils import verbose, f_lock
 import tools.shutil as shutil
 from configs import dfl, cfg
 
@@ -70,7 +70,7 @@ class YMODEM:
         self.mode = mode
         self.pad = pad
 
-    async def send(self, files, lock):
+    async def send(self, files):
         #
         # Sends a list of files.
         #
@@ -106,12 +106,12 @@ class YMODEM:
                 self.pointer = 0
             event.set()
 
-        async def bkp_file(lock):
+        async def bkp_file():
             #
             # Makes a copy of the current file if it is the daily file.
             #
             bkp = self.file.replace(self.file.split('/')[-1], self.bkp_pfx + self.file.split('/')[-1])
-            async with lock:
+            async with f_lock:
                 shutil.copyfile(self.file, bkp)
             return bkp
 
@@ -173,40 +173,40 @@ class YMODEM:
                     try:
                         os.remove(self.tmp_file)
                     except:
-                        utils.verbose('UNABLE TO REMOVE {} FILE'.format(self.tmp_file))
+                        verbose('UNABLE TO REMOVE {} FILE'.format(self.tmp_file))
                 except:
-                    utils.verbose('UNABLE TO RENAME {} FILE'.format(self.file))
+                    verbose('UNABLE TO RENAME {} FILE'.format(self.file))
 
         async def begin_transmission():
             try:
                 self.packet_size = dict(Ymodem = 128, Ymodem1k = 1024)[self.mode]
             except KeyError:
                 raise ValueError('INVALID MODE {}'.format(self.mode))
-            utils.verbose('BEGIN TRANSACTION, PACKET SIZE {}'.format(self.packet_size))
+            verbose('BEGIN TRANSACTION, PACKET SIZE {}'.format(self.packet_size))
             error_count = 0
             self.crc_mode = 0
             while True:
                 char = await self.agetc(1, self.timeout)
                 if error_count == self.retry:
-                    utils.verbose('TOO MANY ERRORS, ABORTING...')
+                    verbose('TOO MANY ERRORS, ABORTING...')
                     return False
                 elif not char:
-                    utils.verbose('TIMEOUT OCCURRED WHILE WAITING FOR STARTING TRANSMISSION, RETRY...')
+                    verbose('TIMEOUT OCCURRED WHILE WAITING FOR STARTING TRANSMISSION, RETRY...')
                     error_count += 1
                 elif char == C:
-                    utils.verbose('<-- C')
-                    utils.verbose('16 BIT CRC REQUESTED')
+                    verbose('<-- C')
+                    verbose('16 BIT CRC REQUESTED')
                     self.crc_mode = 1
                     error_count = 0
                     return True
                 elif char == NAK:
-                    utils.verbose('<-- NAK')
-                    utils.verbose('STANDARD CECKSUM REQUESTED')
+                    verbose('<-- NAK')
+                    verbose('STANDARD CECKSUM REQUESTED')
                     self.crc_mode = 0
                     error_count = 0
                     return True
                 else:
-                    utils.verbose('UNATTENDED CHAR {}, RETRY...'.format(char))
+                    verbose('UNATTENDED CHAR {}, RETRY...'.format(char))
                     error_count += 1
                 await asyncio.sleep(0)
 
@@ -217,18 +217,18 @@ class YMODEM:
             if self.file != '\x00':
                 self.filename = cfg.HOSTNAME.lower() + '/' + self.file.split('/')[-1]  # Adds system name to filename.
                 if self.file.split('/')[-1] == cfg.DATA_FILE:
-                    self.file = await bkp_file(lock)
+                    self.file = await bkp_file()
                 #try:
                 #    stream = open(self.file)
                 #except:
-                #    utils.verbose('UNABLE TO OPEN {}, TRY NEXT self.file...'.format(self.file))
+                #    verbose('UNABLE TO OPEN {}, TRY NEXT self.file...'.format(self.file))
                 #    return  # open next self.file
                 _thread.start_new_thread(get_last_byte, ())  # read last byte from $self.file
                 await asyncio.sleep_ms(10)
                 await event.wait()
                 event.clear()
                 if self.pointer == int(os.stat(self.file)[6]):  # check if pointer correspond to self.file size
-                    utils.verbose('self.file {} ALREADY TRANSMITTED, SEND NEXT self.file...'.format(self.filename))
+                    verbose('self.file {} ALREADY TRANSMITTED, SEND NEXT self.file...'.format(self.filename))
                     totally_sent()
                     return False # open next file
             return True
@@ -238,16 +238,16 @@ class YMODEM:
             while error_count < self.retry:
                 char = await self.agetc(1, self.timeout)
                 if not char:
-                    utils.verbose('TIMEOUT OCCURRED, RETRY...')
+                    verbose('TIMEOUT OCCURRED, RETRY...')
                     error_count += 1
                 elif char == C:
-                    utils.verbose('<-- C')
+                    verbose('<-- C')
                     return True
                 else:
-                    utils.verbose('UNATTENDED CHAR {}, RETRY...'.format(char))
+                    verbose('UNATTENDED CHAR {}, RETRY...'.format(char))
                     error_count += 1
                 await asyncio.sleep(0)
-            utils.verbose('TOO MANY ERRORS, ABORTING...')
+            verbose('TOO MANY ERRORS, ABORTING...')
             return  False
 
         async def filename_pkt():
@@ -290,9 +290,9 @@ class YMODEM:
                         error_count += 1
                         await asyncio.sleep(0)
                         continue
-                    utils.verbose('SENDING FILE {}'.format(self.filename))
+                    verbose('SENDING FILE {}'.format(self.filename))
                     return True
-                utils.verbose('TOO MANY ERRORS, ABORTING...')
+                verbose('TOO MANY ERRORS, ABORTING...')
                 return  False
 
             async def reply():
@@ -301,28 +301,28 @@ class YMODEM:
                 while error_count < self.retry:
                     char = await self.agetc(1, self.timeout)
                     if not char:  # handle rx erros
-                        utils.verbose('TIMEOUT OCCURRED, RETRY...')
+                        verbose('TIMEOUT OCCURRED, RETRY...')
                         error_count += 1
                         return 'resend'
                     elif char == ACK :
-                        utils.verbose('<-- ACK TO FILE {}'.format(self.filename))
+                        verbose('<-- ACK TO FILE {}'.format(self.filename))
                         if self.data == bytearray(self.packet_size):
-                            utils.verbose('TRANSMISSION COMPLETE, EXITING...')
+                            verbose('TRANSMISSION COMPLETE, EXITING...')
                         return True
                     elif char == CAN:
-                        utils.verbose('<-- CAN')
+                        verbose('<-- CAN')
                         if cancel:
-                            utils.verbose('TRANSMISSION CANCELED BY RECEIVER')
+                            verbose('TRANSMISSION CANCELED BY RECEIVER')
                             return  False
                         else:
                             cancel = 1
                             await asyncio.sleep(0)
                             continue  # wait for a second CAN
                     else:
-                        utils.verbose('UNATTENDED CHAR {}, RETRY...'.format(char))
+                        verbose('UNATTENDED CHAR {}, RETRY...'.format(char))
                         error_count += 1
                         return 'resend'
-                utils.verbose('TOO MANY ERRORS, ABORTING...')
+                verbose('TOO MANY ERRORS, ABORTING...')
                 return  False
 
             while True:
@@ -347,7 +347,7 @@ class YMODEM:
                 await event.wait()
                 event.clear()
                 if not self.data:  # EOF.
-                    utils.verbose('EOF')
+                    verbose('EOF')
                     return False
                 self.total_packets += 1
                 self.header = data_pkt_hdr()
@@ -367,9 +367,9 @@ class YMODEM:
                         error_count += 1
                         await asyncio.sleep(0)
                         continue  # resend packet
-                    utils.verbose('PACKET {} -->'.format(self.sequence))
+                    verbose('PACKET {} -->'.format(self.sequence))
                     return True
-                utils.verbose('TOO MANY ERRORS, ABORTING...')
+                verbose('TOO MANY ERRORS, ABORTING...')
                 return  False
 
             async def reply():
@@ -380,11 +380,11 @@ class YMODEM:
                     char = await self.agetc(1, self.timeout)
                     await asyncio.sleep(0)
                     if not char:  # handle rx errors
-                        utils.verbose('TIMEOUT OCCURRED, RETRY...')
+                        verbose('TIMEOUT OCCURRED, RETRY...')
                         return 'resend'
                     elif char == ACK:
                         await asyncio.sleep(0)
-                        utils.verbose('<-- ACK TO PACKET {}'.format(self.sequence))
+                        verbose('<-- ACK TO PACKET {}'.format(self.sequence))
                         await asyncio.sleep(0)
                         self.success_count += 1
                         await asyncio.sleep(0)
@@ -398,22 +398,22 @@ class YMODEM:
                         await asyncio.sleep(0)
                         return True
                     elif char == NAK:
-                        utils.verbose('<-- NAK')
+                        verbose('<-- NAK')
                         return 'resend'
                     elif char == CAN:
-                        utils.verbose('<-- CAN')
+                        verbose('<-- CAN')
                         if cancel:
-                            utils.verbose('TRANSMISSION CANCELED BY RECEIVER')
+                            verbose('TRANSMISSION CANCELED BY RECEIVER')
                             return  False
                         else:
                             cancel = 1
                             await asyncio.sleep(0)
                             continue  # wait for a second CAN
                     else:
-                        utils.verbose('UNATTENDED CHAR {}, RETRY...'.format(char))
+                        verbose('UNATTENDED CHAR {}, RETRY...'.format(char))
                         return 'resend'
                     await asyncio.sleep(0)
-                utils.verbose('TOO MANY ERRORS, ABORTING...')
+                verbose('TOO MANY ERRORS, ABORTING...')
                 return  False
 
             while True:
@@ -437,22 +437,22 @@ class YMODEM:
                     error_count += 1
                     await asyncio.sleep(0)
                     continue  # resend EOT
-                utils.verbose('EOT -->')
+                verbose('EOT -->')
                 await asyncio.sleep(0)
                 char = await self.agetc(1, self.timeout)  # waiting for reply
                 if not char:  # handle rx errors
-                    utils.verbose('TIMEOUT OCCURRED WHILE WAITING FOR REPLY TO EOT, RETRY...')
+                    verbose('TIMEOUT OCCURRED WHILE WAITING FOR REPLY TO EOT, RETRY...')
                     error_count += 1
                 elif char == ACK:
-                    utils.verbose('<-- ACK TO EOT')
-                    utils.verbose('FILE {} SUCCESSFULLY TRANSMITTED'.format(self.filename))
+                    verbose('<-- ACK TO EOT')
+                    verbose('FILE {} SUCCESSFULLY TRANSMITTED'.format(self.filename))
                     totally_sent()
                     return True
                 else:
-                    utils.verbose('UNATTENDED CHAR {}, RETRY...'.format(char))
+                    verbose('UNATTENDED CHAR {}, RETRY...'.format(char))
                     error_count += 1
                 await asyncio.sleep(0)
-            utils.verbose('TOO MANY ERRORS, ABORTING...')
+            verbose('TOO MANY ERRORS, ABORTING...')
             return False
 
         ####################### Starts transmission. ###########################
@@ -484,49 +484,49 @@ class YMODEM:
         return True
 
     async def abort(self, count=2):
-        utils.verbose('CANCEL TRANSMISSION...')
+        verbose('CANCEL TRANSMISSION...')
         for _ in range(count):
             await self.aputc(CAN, 60)  # handle tx errors
-            utils.verbose('CAN -->')
+            verbose('CAN -->')
             await asyncio.sleep(0)
 
     async def ack(self):
         error_count = 0
         while error_count < self.retry:
             if not await self.aputc(ACK, self.timeout):  # handle tx errors
-                utils.verbose('ERROR SENDING ACK, RETRY...')
+                verbose('ERROR SENDING ACK, RETRY...')
                 error_count += 1
                 await asyncio.sleep(0)
                 continue
-            utils.verbose('ACK -->')
+            verbose('ACK -->')
             return True
-        utils.verbose('TOO MANY ERRORS, ABORTING...')
+        verbose('TOO MANY ERRORS, ABORTING...')
         return False  # Exit
 
     async def nak(self):
         error_count = 0
         while error_count < self.retry:
             if not await self.aputc(NAK, self.timeout):  # handle tx errors
-                utils.verbose('ERROR SENDING NAK, RETRY...')
+                verbose('ERROR SENDING NAK, RETRY...')
                 error_count += 1
                 await asyncio.sleep(0)
                 continue
-            utils.verbose('NAK -->')
+            verbose('NAK -->')
             return False  # Exit
         return True
-        utils.verbose('TOO MANY ERRORS, ABORTING...')
+        verbose('TOO MANY ERRORS, ABORTING...')
 
     async def clear(self):
         error_count = 0
         while error_count < self.retry:
             if not await self.aputc(C, self.timeout):  # handle tx errors
-                utils.verbose('ERROR SENDING C, RETRY...')
+                verbose('ERROR SENDING C, RETRY...')
                 error_count += 1
                 await asyncio.sleep(0)
                 continue
-            utils.verbose('C -->')
+            verbose('C -->')
             return True
-        utils.verbose('TOO MANY ERRORS, ABORTING...')
+        verbose('TOO MANY ERRORS, ABORTING...')
         return False  # Exit
 
     def verify_recvd_checksum(self):
@@ -536,14 +536,14 @@ class YMODEM:
             calculated_sum = await self.calc_crc(self.data[:-2])
             valid = bool(received_sum == calculated_sum)
             if not valid:
-                utils.verbose('CHECKSUM FAIL EXPECTED({:04x}) GOT({:4x})'.format(received_sum, calculated_sum))
+                verbose('CHECKSUM FAIL EXPECTED({:04x}) GOT({:4x})'.format(received_sum, calculated_sum))
         else:
             self.checksum = bytearray([self.data[-1]])
             received_sum = self.checksum[0]
             calculated_sum = self.calc_checksum(self.data[-1])
             valid = received_sum == calculated_sum
             if not valid:
-                utils.verbose('CHECKSUM FAIL EXPECTED({:02x}) GOT({:2x})'.format(received_sum, calculated_sum))
+                verbose('CHECKSUM FAIL EXPECTED({:02x}) GOT({:2x})'.format(received_sum, calculated_sum))
         return valid
 
 

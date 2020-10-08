@@ -2,8 +2,8 @@ import uasyncio as asyncio
 import pyb
 import time
 from math import sin, cos, sqrt, atan2, radians
-import tools.utils as utils
-from configs import dfl, cfg
+from tools.utils import log, log_data, timesync, uart2_sema, set_sms
+from configs import cfg
 from device import DEVICE
 
 class GPS(DEVICE):
@@ -13,35 +13,34 @@ class GPS(DEVICE):
         self.sreader = asyncio.StreamReader(self.uart)
         self.swriter = asyncio.StreamWriter(self.uart, {})
         self.data = b''
+        self.semaphore = uart2_sema
         self.warmup_interval = self.config['Warmup_Interval']
         self.fix = None
+        self.fixed = timesync
         self.displacement = 0
 
     async def start_up(self, **kwargs):
-        if kwargs and  'time_sync' in kwargs:
-            self.time_sync = kwargs['time_sync']
-        if kwargs and 'sema' in kwargs:
-            self.sema = kwargs['sema']
-        async with self.sema:
+        async with self.semaphore:
             self.on()
         for _ in range(2):
-            await self.main(None, tasks=['sync_rtc'])
-            if self.time_sync.is_set():
+            await self.main(['sync_rtc'])
+            if self.fixed.is_set():
                 return
             await asyncio.sleep(2)
-        self.time_sync.set()  # Skips time synchronization.
+        self.fixed.set()  # Skips time synchronization.
 
     def is_fixed(self):
         if not self.data.split(',')[2] == 'A':
-            utils.log(self.__qualname__, 'no fix')
+            log(self.__qualname__, 'no fix')
             return False
+        self.fixed.set()
         return True
 
     def last_fix(self):
         if self.fix:
             self.calc_displacement()
         self.fix = self.data
-        utils.log(self.__qualname__, 'fix acquired')
+        log(self.__qualname__, 'fix acquired')
 
     def calc_displacement(self):
         R = 6373.0 / 1.852  # Approximate radius of earth in nm.
@@ -55,7 +54,7 @@ class GPS(DEVICE):
         c = 2 * atan2(sqrt(a), sqrt(1 - a))
         self.displacement =  R * c
         if self.displacement > cfg.DISPLACEMENT_THRESHOLD and float(last[7]) > 0:
-            utils.set_sms('{}-{}-{}T{}:{}:{}Z ***ALERT*** {} is {:.3f}nm ({}m) away from prev. pos. (coord {}{}\'{} {}{}\'{}, cog {}, sog {}kn) next msg in 5\''.format(
+            set_sms('{}-{}-{}T{}:{}:{}Z ***ALERT*** {} is {:.3f}nm ({}m) away from prev. pos. (coord {}{}\'{} {}{}\'{}, cog {}, sog {}kn) next msg in 5\''.format(
             int(last[9][-2:])+2000,
             last[9][2:4],
             last[9][0:2],
@@ -80,12 +79,12 @@ class GPS(DEVICE):
         rtc = pyb.RTC()
         try:
             rtc.datetime((int('20'+utc_date[4:6]), int(utc_date[2:4]), int(utc_date[0:2]), 0, int(utc_time[0:2]), int(utc_time[2:4]), int(utc_time[4:6]), float(utc_time[6:])))  # rtc.datetime(yyyy, mm, dd, 0, hh, ii, ss, sss)
-            utils.log(self.__qualname__, 'rtc synchronized')
+            log(self.__qualname__, 'rtc synchronized')
         except Exception as err:
-            utils.log(self.__qualname__, 'sync_rtc', type(err).__name__, err, type='e')
+            log(self.__qualname__, 'sync_rtc', type(err).__name__, err, type='e')
 
-    def log(self):
-        utils.log_data(self.data)
+    async def log(self):
+        await log_data(self.data)
 
     async def verify_checksum(self):
         calculated_checksum = 0
@@ -93,7 +92,7 @@ class GPS(DEVICE):
             calculated_checksum ^= ord(char)
             await asyncio.sleep(0)
         if '{:02X}'.format(calculated_checksum) != self.data[-4:-2]:
-            utils.log(self.__qualname__, 'NMEA invalid checksum calculated: {:02X} got: {}'.format(calculated_checksum, self.data[-4:-2]))
+            log(self.__qualname__, 'NMEA invalid checksum calculated: {:02X} got: {}'.format(calculated_checksum, self.data[-4:-2]))
             return False
         return True
 
@@ -102,21 +101,22 @@ class GPS(DEVICE):
             self.data = self.data.decode('utf-8')
             return True
         except UnicodeError:
-            utils.log(self.__qualname__, 'communication error', self.data)
+            log(self.__qualname__, 'communication error', self.data)
             return False
 
-    async def main(self, lock, tasks=[]):
-        async with self.sema:
+    async def main(self, tasks=[]):
+        async with self.semaphore:
             #self.on()
             self.init_uart()
-            self.time_sync.clear()
+            await asyncio.sleep(1)
+            self.fixed.clear()
             t0 = time.time()
             while time.time() - t0 < self.warmup_interval + self.timeout:
                 try:
-                    self.data = await asyncio.wait_for(self.sreader.readline(), 5)
+                    self.data = await asyncio.wait_for(self.sreader.readline(), 2)
                 except asyncio.TimeoutError:
                     self.data = b''
-                    utils.log(self.__qualname__, 'no data received', type='e')  # DEBUG
+                    log(self.__qualname__, 'no data received', type='e')
                     break
                 if self.decoded():
                     if self.data.startswith('$') and self.data.endswith('\r\n'):
@@ -128,16 +128,13 @@ class GPS(DEVICE):
                                         self.last_fix()
                                     if 'sync_rtc' in tasks:
                                         self.sync_rtc()
-                                    self.time_sync.set()
                                     break
                 await asyncio.sleep(0)
-            if 'log' in tasks:
-                if self.data:
-                    self.data = rmc[:-2]
-                    async with lock:
-                        self.log()
+            if 'log' in tasks and rmc:
+                self.data = rmc[:-2]
+                await self.log()
             self.uart.deinit()  # Releases the uart to the meteo.
             self.off()  # Switches off itself to avoid conflicts with the meteo.
         await asyncio.sleep(1)
-        async with self.sema:
+        async with self.semaphore:
             self.on()  # Powers on itself again as soon as the meteo task ends.

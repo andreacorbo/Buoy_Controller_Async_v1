@@ -20,17 +20,14 @@ async def bar(txt):  # Demonstrate coro launch
 
 async def main():
     print('Asynchronous test running...')
-    asyncio.create_task(schedule(foo, 'every 4 mins', hrs=None, mins=range(0, 60, 4)))
-
-    asyncio.create_task(schedule(foo, 'every 5 mins', hrs=None, mins=range(0, 60, 5)))
-
-    # Launch a coroutine
-    asyncio.create_task(schedule(bar, 'every 3 mins', hrs=None, mins=range(0, 60, 3)))
-
-    asyncio.create_task(schedule(foo, 'one shot', hrs=None, mins=range(0, 60, 2), times=1))
-    await asyncio.sleep(900)  # Quit after 15 minutes
+    asyncio.create_task(schedule(bar, '@min 17', hrs=0, mins=34, secs=30))
+    asyncio.create_task(schedule(bar, 'every 2 secs', hrs=None, mins=None, secs=range(0,60,2)))
 
 try:
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())
+    loop.run_forever()
+except KeyboardInterrupt:
+    pass
 finally:
-    _ = asyncio.new_event_loop()
+    _ = asyncio.new_event_loop()  # Clear retained state

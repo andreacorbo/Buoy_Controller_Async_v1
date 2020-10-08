@@ -6,7 +6,7 @@ import struct
 import select
 import _thread
 from configs import dfl, cfg
-import tools.utils as utils
+from tools.utils import log, log_data, unix_epoch, iso8601, verbose, timesync
 from device import DEVICE
 
 class ADCP(DEVICE):
@@ -34,30 +34,29 @@ class ADCP(DEVICE):
         self.init_uart()
         await asyncio.sleep(1) # Waits for uart getting ready.
         if await self.brk():
-            if kwargs and 'time_sync' in kwargs:
-                await kwargs['time_sync'].wait()
-                await self.set_clock()
-                await self.set_usr_cfg()
-                await self.get_cfg()
-                await self.start_delayed()
-                await self.parse_cfg()
-                utils.log(self.__qualname__, 'successfully initialised')
+            await timesync.wait()
+            await self.set_clock()
+            await self.set_usr_cfg()
+            await self.get_cfg()
+            await self.start_delayed()
+            await self.parse_cfg()
+            log(self.__qualname__, 'successfully initialised')
 
     def decode(self):
         try:
             self.data.decode('utf-8')
             return True
         except UnicodeError:
-            utils.log(self.__qualname__, 'communication error')
+            log(self.__qualname__, 'communication error')
             return False
 
     async def reply(self, timeout=10):
         self.data = b''
         try:
             self.data = await asyncio.wait_for(self.sreader.read(1024), timeout)
-            #utils.verbose(self.data)
+            verbose(self.data)
         except asyncio.TimeoutError:
-            utils.log(self.__qualname__, 'no answer')
+            log(self.__qualname__, 'no answer')
             return False
         #if self.decode():  TODO: Check if it works.
         #    return True
@@ -109,7 +108,7 @@ class ADCP(DEVICE):
         calc_checksum = await self.calc_checksum(data)
         if checksum == calc_checksum:
             return True
-        utils.log(self.__qualname__, 'invalid checksum calculated: {} got: {}'.format(calc_checksum, checksum))
+        log(self.__qualname__, 'invalid checksum calculated: {} got: {}'.format(calc_checksum, checksum))
         return False
 
     async def set_clock(self):
@@ -122,7 +121,7 @@ class ADCP(DEVICE):
                     if self.ack():
                         try:
                             self.data = binascii.hexlify(self.data)
-                            return '20{:2s}-{:2s}-{:2s} {:2s}:{:2s}:{:2s}'.format(
+                            return '20{:2s}-{:2s}-{:2s}T{:2s}:{:2s}:{:2s}Z'.format(
                                 self.data[8:10], # Year
                                 self.data[10:12],# Month
                                 self.data[4:6],  # Day
@@ -130,7 +129,7 @@ class ADCP(DEVICE):
                                 self.data[0:2],  # Minute
                                 self.data[2:4])  # Seconds
                         except Exception as err:
-                            utils.log(self.__qualname__, 'get_clock', type(err).__name__, err, type='e')
+                            log(self.__qualname__, 'get_clock', type(err).__name__, err, type='e')
                             return False
 
         if await self.brk():
@@ -139,9 +138,9 @@ class ADCP(DEVICE):
             await self.swriter.awrite(binascii.unhexlify('{:02d}{:02d}{:02d}{:02d}{:02d}{:02d}'.format(now[4], now[5], now[2], now[3], int(str(now[0])[2:]), now[1])))
             if await self.reply():
                 if self.ack():
-                    utils.log(self.__qualname__, 'instrument clock synchronized UTC({})'.format(await get_clock()))
+                    log(self.__qualname__, 'instrument clock synchronized {}'.format(await get_clock()))
                     return True
-            utils.log(self.__qualname__, 'unable to synchronize the instrument clock', type='e')
+            log(self.__qualname__, 'unable to synchronize the instrument clock', type='e')
             return False
 
     async def get_cfg(self):
@@ -154,7 +153,7 @@ class ADCP(DEVICE):
                     conf.write(self.data)
                     flag = True
             except Exception as err:
-                utils.log(self.__qualname__, 'get_cfg', type(err).__name__, err, type='e')
+                log(self.__qualname__, 'get_cfg', type(err).__name__, err, type='e')
             self.evt.set()
 
         if await self.brk():
@@ -167,7 +166,7 @@ class ADCP(DEVICE):
                     self.evt.clear()
                     if flag:
                         return True
-        utils.log(self.__qualname__, 'unable to retreive the instrument configuration', type='e')
+        log(self.__qualname__, 'unable to retreive the instrument configuration', type='e')
         return False
 
     async def parse_cfg(self):
@@ -181,13 +180,13 @@ class ADCP(DEVICE):
                         'COMPASS {}'.format('NO' if conf >> 1 & 1  else 'YES')
                         )
                 except Exception as err:
-                    utils.log(self.__qualname__, 'decode_hw_cfg', type(err).__name__, err)
+                    log(self.__qualname__, 'decode_hw_cfg', type(err).__name__, err)
 
             def decode_hw_status(status):
                 try:
                     return 'VELOCITY RANGE {}'.format('HIGH' if status >> 0 & 1  else 'NORMAL')
                 except Exception as err:
-                    utils.log(self.__qualname__, 'decode_hw_status', type(err).__name__, err)
+                    log(self.__qualname__, 'decode_hw_status', type(err).__name__, err)
 
             try:
                 return (
@@ -205,7 +204,7 @@ class ADCP(DEVICE):
                     bytestring[42:46].decode('ascii')                               # [11] FWVersion
                     )
             except Exception as err:
-                utils.log(self.__qualname__, 'parse_cfg__', type(err).__name__, err)
+                log(self.__qualname__, 'parse_cfg__', type(err).__name__, err)
 
         def parse_head_cfg(bytestring):
 
@@ -218,7 +217,7 @@ class ADCP(DEVICE):
                         '{}'.format('DOWN' if conf >> 3 & 1  else 'UP')
                         )
                 except Exception as err:
-                    utils.log(self.__qualname__, 'decode_head_cfg', type(err).__name__, err)
+                    log(self.__qualname__, 'decode_head_cfg', type(err).__name__, err)
 
             try:
                 return (
@@ -234,7 +233,7 @@ class ADCP(DEVICE):
                     int.from_bytes(bytestring[220:222], 'little')                 # [9] NBeams
                     )
             except Exception as err:
-                utils.log(self.__qualname__, 'parse_head_cfg', type(err).__name__, err)
+                log(self.__qualname__, 'parse_head_cfg', type(err).__name__, err)
 
         def parse_usr_cfg(bytestring):
 
@@ -242,31 +241,31 @@ class ADCP(DEVICE):
                 try:
                     return '{:016b}'.format(bytestring)
                 except Exception as err:
-                    utils.log(self.__qualname__, 'decode_usr_timctrlreg', type(err).__name__, err)
+                    log(self.__qualname__, 'decode_usr_timctrlreg', type(err).__name__, err)
 
             def decode_usr_pwrctrlreg(bytestring):
                 try:
                     return '{:016b}'.format(bytestring)
                 except Exception as err:
-                    utils.log(self.__qualname__, 'decode_usr_pwrctrlreg', type(err).__name__, err)
+                    log(self.__qualname__, 'decode_usr_pwrctrlreg', type(err).__name__, err)
 
             def decode_usr_mode(bytestring):
                 try:
                     return '{:016b}'.format(bytestring)
                 except Exception as err:
-                    utils.log(self.__qualname__, 'decode_usr_mode', type(err).__name__, err)
+                    log(self.__qualname__, 'decode_usr_mode', type(err).__name__, err)
 
             def decode_usr_modetest(bytestring):
                 try:
                     return '{:016b}'.format(bytestring)
                 except Exception as err:
-                    utils.log(self.__qualname__, 'decode_usr_modetest', type(err).__name__, err)
+                    log(self.__qualname__, 'decode_usr_modetest', type(err).__name__, err)
 
             def decode_usr_wavemode(bytestring):
                 try:
                     return '{:016b}'.format(bytestring)
                 except Exception as err:
-                    utils.log(self.__qualname__, 'decode_usr_wavemode', type(err).__name__, err)
+                    log(self.__qualname__, 'decode_usr_wavemode', type(err).__name__, err)
 
             try:
                 return (
@@ -327,7 +326,7 @@ class ADCP(DEVICE):
                     bytestring[486:510]                                                 # [54] QualConst
                     )
             except Exception as err:
-                utils.log(self.__qualname__, 'parse_usr_cfg', type(err).__name__, err)
+                log(self.__qualname__, 'parse_usr_cfg', type(err).__name__, err)
 
         def filereader():
             #
@@ -340,7 +339,7 @@ class ADCP(DEVICE):
                     self.head_cfg = parse_head_cfg(bytestring[48:272])   # Head config (224 bytes)
                     self.usr_cfg = parse_usr_cfg(bytestring[272:784])    # Deployment config (512 bytes)
             except Exception as err:
-                utils.log(self.__qualname__, 'parse_cfg', type(err).__name__, err)
+                log(self.__qualname__, 'parse_cfg', type(err).__name__, err)
             self.evt.set()
 
         _thread.start_new_thread(filereader, ())
@@ -357,14 +356,14 @@ class ADCP(DEVICE):
                 with open(dfl.CONFIG_DIR + self.deployment_config, 'rb') as pcf:
                     bytestring = pcf.read()
             except Exception as err:
-                utils.log(self.__qualname__, 'set_usr_cfg', type(err).__name__, err)
+                log(self.__qualname__, 'set_usr_cfg', type(err).__name__, err)
             self.evt.set()
 
         def set_deployment_start(sampling_interval, avg_interval):
             # Computes the measurement starting time to be in synch with the scheduler.
             now = time.time()
             next_sampling = now - now % sampling_interval + sampling_interval
-            utils.log(self.__qualname__, 'deployment start at {}, measurement interval {}\', average interval {}\''.format(utils.iso8601(next_sampling), sampling_interval, avg_interval))
+            log(self.__qualname__, 'deployment start at {}, measurement interval {}\', average interval {}\''.format(iso8601(next_sampling), sampling_interval, avg_interval))
             deployment_start = time.localtime(next_sampling - avg_interval + self.deployment_delay)
             return binascii.unhexlify('{:02d}{:02d}{:02d}{:02d}{:02d}{:02d}'.format(deployment_start[4], deployment_start[5], deployment_start[2], deployment_start[3], int(str(deployment_start[0])[2:]), deployment_start[1]))
 
@@ -377,7 +376,7 @@ class ADCP(DEVICE):
                 sampling_interval = int.from_bytes(bytestring[38:40], 'little')
                 avg_interval = int.from_bytes(bytestring[16:18], 'little')
                 for _ in cfg.CRON:
-                    if _[0] == self.__qualname__ + str(self.instance).lower():
+                    if _[0] == self.__qualname__.lower():
                         if not _[9]:  # Skips if continuos polling.
                             _[7] = range(0,60,sampling_interval)
                 usr_cfg = bytestring[0:48] + set_deployment_start(sampling_interval, avg_interval) + bytestring[54:510]
@@ -387,7 +386,7 @@ class ADCP(DEVICE):
                 if await self.reply():
                     if self.ack():
                         return True
-            utils.log(self.__qualname__, 'unable to upload the deployment configuration', type='e')
+            log(self.__qualname__, 'unable to upload the deployment configuration', type='e')
             return False
 
     async def start_delayed(self):
@@ -397,9 +396,9 @@ class ADCP(DEVICE):
                 await self.swriter.awrite(b'\x46\x4F\x12\xD4\x1E\xEF')
                 if await self.reply():
                     if self.ack():
-                        utils.log(self.__qualname__, 'recorder formatted')
+                        log(self.__qualname__, 'recorder formatted')
                         return True
-            utils.log(self.__qualname__, 'unable to format the recorder', type='e')
+            log(self.__qualname__, 'unable to format the recorder', type='e')
             return False
 
         if await self.brk():
@@ -411,7 +410,7 @@ class ADCP(DEVICE):
                     if await format_recorder():
                         await asyncio.sleep(0)
                         continue
-                utils.log(self.__qualname__, 'unable to start measurement', type='e')
+                log(self.__qualname__, 'unable to start measurement', type='e')
                 return False
 
     def conv_data(self):
@@ -428,7 +427,7 @@ class ADCP(DEVICE):
                     'COORD. TRANSF. {}'.format('ERROR' if error >> 3 & 1 else 'OK')
                     )
             except Exception as err:
-                utils.log(self.__qualname__, 'get_error', type(err).__name__, err)
+                log(self.__qualname__, 'get_error', type(err).__name__, err)
 
         def get_status(status):
 
@@ -442,7 +441,7 @@ class ADCP(DEVICE):
                             'RTC ALARM' if status >> 5 & 1 and status >> 4 & 1 else None)
                         )
                 except Exception as err:
-                    utils.log(self.__qualname__, 'get_wkup_state', type(err).__name__, err)
+                    log(self.__qualname__, 'get_wkup_state', type(err).__name__, err)
 
             def get_power_level(status):
                 try:
@@ -454,7 +453,7 @@ class ADCP(DEVICE):
                             '3' if status >> 7 & 1 and status >> 6 & 1 else None)
                         )
                 except Exception as err:
-                    utils.log(self.__qualname__, 'get_power_level', type(err).__name__, err)
+                    log(self.__qualname__, 'get_power_level', type(err).__name__, err)
 
             try:
                 return(
@@ -466,13 +465,13 @@ class ADCP(DEVICE):
                     get_power_level(status)
                     )
             except Exception as err:
-                utils.log(self.__qualname__, 'get_status', type(err).__name__, err)
+                log(self.__qualname__, 'get_status', type(err).__name__, err)
 
         def get_pressure(pressureMSB, pressureLSW):
             try:
                 return 65536 * int.from_bytes(pressureMSB, 'little') + int.from_bytes(pressureLSW, 'little')
             except Exception as err:
-                utils.log(self.__qualname__, 'get_pressure', type(err).__name__, err)
+                log(self.__qualname__, 'get_pressure', type(err).__name__, err)
 
         def get_cells(data):
             # list(x1, x2, x3... y1, y2, y3... z1, z2, z3..., a11, a12 , a13..., a21, a22, a23..., a31, a32, a33...)
@@ -490,7 +489,7 @@ class ADCP(DEVICE):
                             yield int.from_bytes(data[j:j+1], 'little')
                             j += 1
             except Exception as err:
-                utils.log(self.__qualname__, 'get_cells', type(err).__name__, err)
+                log(self.__qualname__, 'get_cells', type(err).__name__, err)
 
         try:
             return (
@@ -512,7 +511,7 @@ class ADCP(DEVICE):
                 struct.unpack('<h',self.data[28:30])[0] / 100,             # [15] Temperature
                 ) + tuple(get_cells(self.data[30:]))                       # [16:] x1,y1,z1, x2, y2, z2, x3, y3, z3...
         except Exception as err:
-            utils.log(self.__qualname__, 'conv_data', type(err).__name__, err)
+            log(self.__qualname__, 'conv_data', type(err).__name__, err)
 
     def format_data(self, sample):
 
@@ -522,8 +521,8 @@ class ADCP(DEVICE):
         try:
             record = [
             self.config['String_Label'],
-            '{}'.format(str(utils.unix_epoch(self.ts))),
-            '{}'.format(utils.iso8601(self.ts)),                            # yyyy-mm-ddThh:mm:ssZ (controller)
+            '{}'.format(str(unix_epoch(self.ts))),
+            '{}'.format(iso8601(self.ts)),                            # yyyy-mm-ddThh:mm:ssZ (controller)
             '{:2s}/{:2s}/20{:2s}'.format(sample[2], sample[5], sample[4]),  # dd/mm/yyyy
             '{:2s}:{:2s}'.format(sample[3], sample[0]),                     # hh:mm
             '{:.2f}'.format(sample[8]),                                     # Battery
@@ -550,14 +549,14 @@ class ADCP(DEVICE):
                 j += 1
             return record
         except Exception as err:
-            utils.log(self.__qualname__, 'format_data', type(err).__name__, err)
+            log(self.__qualname__, 'format_data', type(err).__name__, err)
 
-    def log(self):
+    async def log(self):
         #with open('/sd/data/aquadopp.raw','ab') as raw:
         #    raw.write(self.data)
-        utils.log_data(dfl.DATA_SEPARATOR.join(self.format_data(self.conv_data())))
+        await log_data(dfl.DATA_SEPARATOR.join(self.format_data(self.conv_data())))
 
-    async def main(self, lock, tasks=[]):
+    async def main(self, tasks=[]):
         # Scheduled task.
         self.init_uart()
         pyb.LED(3).on()
@@ -567,17 +566,16 @@ class ADCP(DEVICE):
             self.ts = time.time()
         except asyncio.TimeoutError:
             self.data = b''
-            utils.log(self.__qualname__, 'no data received', type='e')
+            log(self.__qualname__, 'no data received', type='e')
         if self.data and self.data != b'\x00':
-            async with lock:
-                self.log()
+            await self.log()
         pyb.LED(3).off()
         self.uart.deinit()
 
-    async def main_(self, lock, tasks=[]):
+    async def main_(self, tasks=[]):
         # Continuos polling. DEBUG
         self.init_uart()
-        await self.parse_cfg()
+        #await self.parse_cfg()
         poll_ = select.poll()  # Creates a poll object to listen to.
         poll_.register(self.uart, select.POLLIN)
         while True:
@@ -587,8 +585,7 @@ class ADCP(DEVICE):
                 if self.data == b'\x00':
                     continue
                 pyb.LED(3).on()
-                async with lock:
-                    self.log()
+                await self.log()
                 pyb.LED(3).off()
                 await asyncio.sleep(0)
             await asyncio.sleep(0)

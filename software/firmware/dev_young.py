@@ -2,8 +2,7 @@ import uasyncio as asyncio
 import pyb
 import time
 from math import sin, cos, radians, atan2, degrees, pow, sqrt
-import tools.utils as utils
-from configs import dfl, cfg
+from tools.utils import log, log_data, unix_epoch, iso8601, uart2_sema
 from device import DEVICE
 
 class METEO(DEVICE):
@@ -13,19 +12,18 @@ class METEO(DEVICE):
         self.sreader = asyncio.StreamReader(self.uart)
         self.swriter = asyncio.StreamWriter(self.uart, {})
         self.data = b''
+        self.uart_sema = uart2_sema
         self.warmup_interval = self.config['Warmup_Interval']
         self.data_length = self.config['Data_Length']
         self.string_label = self.config['String_Label']
         self.records = 0
 
     async def start_up(self, **kwargs):
-        if kwargs and 'sema' in kwargs:
-            self.sema = kwargs['sema']
-        async with self.sema:
+        async with self.uart_sema:
             self.on()
             self.init_uart()
             if await self.is_ready():
-                utils.log(self.__qualname__, 'successfully initialised')
+                log(self.__qualname__, 'successfully initialised')
             self.uart.deinit()
             self.off()
 
@@ -34,14 +32,14 @@ class METEO(DEVICE):
             data.decode('utf-8')
             return True
         except UnicodeError:
-            utils.log(self.__qualname__, 'communication error')
+            log(self.__qualname__, 'communication error')
             return False
 
     async def is_ready(self):
         try:
             line = await asyncio.wait_for(self.sreader.readline(), 10)
         except asyncio.TimeoutError:
-            utils.log(self.__qualname__, 'no answer')
+            log(self.__qualname__, 'no answer')
             return False
         if self.decode(line):
             return True
@@ -66,7 +64,7 @@ class METEO(DEVICE):
             if avg < 0:
                 avg += 360
         except Exception as err:
-            utils.log(self.__qualname__,'wd_vect_avg ({}): {}'.format(type(err).__name__, err), type='e')
+            log(self.__qualname__,'wd_vect_avg ({}): {}'.format(type(err).__name__, err), type='e')
         return avg
 
     def ws_vect_avg(self):
@@ -86,7 +84,7 @@ class METEO(DEVICE):
                 y = y + (cos(radians(direction)) * pow(speed,2))
             avg = sqrt(x+y) / self.records
         except Exception as err:
-            utils.log(self.__qualname__,'ws_vect_avg ({}): {}'.format(type(err).__name__, err))
+            log(self.__qualname__,'ws_vect_avg ({}): {}'.format(type(err).__name__, err))
         return avg
 
     def ws_avg(self):
@@ -99,7 +97,7 @@ class METEO(DEVICE):
         try:
             avg = sum(samples()) / self.records
         except Exception as err:
-            utils.log(self.__qualname__,'ws_avg ({}): {}'.format(type(err).__name__, err))
+            log(self.__qualname__,'ws_avg ({}): {}'.format(type(err).__name__, err))
         return avg
 
     def ws_max(self):
@@ -113,7 +111,7 @@ class METEO(DEVICE):
         try:
             maxspeed = max(samples())
         except Exception as err:
-            utils.log(self.__qualname__,'ws_max ({}): {}'.format(type(err).__name__, err))
+            log(self.__qualname__,'ws_max ({}): {}'.format(type(err).__name__, err))
         return maxspeed
 
     def wd_max(self):
@@ -129,7 +127,7 @@ class METEO(DEVICE):
                 if sample[0] == self.ws_max():
                     maxdir = sample[1] / 10
         except Exception as err:
-            utils.log(self.__qualname__,'wd_max ({}): {}'.format(type(err).__name__, err))
+            log(self.__qualname__,'wd_max ({}): {}'.format(type(err).__name__, err))
         return maxdir
 
     def temp_avg(self):
@@ -142,7 +140,7 @@ class METEO(DEVICE):
         try:
             avg = sum(samples()) / self.records
         except Exception as err:
-            utils.log(self.__qualname__,'temp_avg ({}): {}'.format(type(err).__name__, err))
+            log(self.__qualname__,'temp_avg ({}): {}'.format(type(err).__name__, err))
         return avg
 
     def press_avg(self):
@@ -155,7 +153,7 @@ class METEO(DEVICE):
         try:
             avg = sum(samples()) / self.records
         except Exception as err:
-            utils.log(self.__qualname__,'press_avg ({}): {}'.format(type(err).__name__, err))
+            log(self.__qualname__,'press_avg ({}): {}'.format(type(err).__name__, err))
         return avg
 
     def hum_avg(self):
@@ -168,7 +166,7 @@ class METEO(DEVICE):
         try:
             avg = sum(samples()) / self.records
         except Exception as err:
-            utils.log(self.__qualname__,'hum ({}): {}'.format(type(err).__name__, err))
+            log(self.__qualname__,'hum ({}): {}'.format(type(err).__name__, err))
         return avg
 
     def compass_avg(self):
@@ -188,7 +186,7 @@ class METEO(DEVICE):
             if avg < 0:
                 avg += 360
         except Exception as err:
-            utils.log(self.__qualname__,'compass_avg ({}): {}'.format(type(err).__name__, err))
+            log(self.__qualname__,'compass_avg ({}): {}'.format(type(err).__name__, err))
         return avg
 
     def radiance_avg(self):
@@ -201,16 +199,16 @@ class METEO(DEVICE):
         try:
             avg = sum(samples()) / self.records
         except Exception as err:
-            utils.log(self.__qualname__,'radiance_avg ({}): {}'.format(type(err).__name__, err))
+            log(self.__qualname__,'radiance_avg ({}): {}'.format(type(err).__name__, err))
         return avg
 
-    def log(self):
+    async def log(self):
         self.ts = time.time()
-        utils.log_data(
+        await log_data(
             '{},{},{},{},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:0d},{:.1f}'.format(
                 self.string_label,
-                str(utils.unix_epoch(self.ts)),
-                utils.iso8601(self.ts),  # yyyy-mm-ddThh:mm:ssZ (controller)
+                str(unix_epoch(self.ts)),
+                iso8601(self.ts),  # yyyy-mm-ddThh:mm:ssZ (controller)
                 self.wd_vect_avg(),  # vectorial avg wind direction
                 self.ws_avg(),  # avg wind speed
                 self.temp_avg(),  # avg temp
@@ -225,8 +223,8 @@ class METEO(DEVICE):
                 )
             )
 
-    async def main(self, lock, tasks=[]):
-        async with self.sema:
+    async def main(self, tasks=[]):
+        async with self.uart_sema:
             self.on()
             self.init_uart()
             await asyncio.sleep(self.warmup_interval)
@@ -237,7 +235,7 @@ class METEO(DEVICE):
                 try:
                     line = await asyncio.wait_for(self.sreader.readline(), self.timeout)
                 except asyncio.TimeoutError:
-                    utils.log(self.__qualname__, 'no data received', type='e')
+                    log(self.__qualname__, 'no data received', type='e')
                     break
                 if not self.decode(line):
                     await asyncio.sleep(0)
@@ -249,8 +247,7 @@ class METEO(DEVICE):
                 await asyncio.sleep(0)
             self.records = len(self.data) // self.data_length
             if self.data:
-                async with lock:
-                    self.log()
+                await self.log()
             pyb.LED(3).off()
             self.uart.deinit()
             self.off()

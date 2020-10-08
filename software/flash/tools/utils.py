@@ -5,10 +5,16 @@ import os
 import time
 from configs import dfl, cfg
 from primitives.message import Message
+from primitives.semaphore import Semaphore
 
 logger = True  # Prints out messages.
 
+f_lock = asyncio.Lock()  # Data file lock.
 sms = Message()  # Sms event.
+uart2_sema = Semaphore(1)  # Gps/Meteo uart semaphore.
+timesync = asyncio.Event()  # Gps fix event.
+scheduling = asyncio.Event()  # Scheduler event.
+
 
 def welcome_msg():
     print(
@@ -89,14 +95,38 @@ def set_sms(text):
     # Set sms text, works one-to-one with smsender.
     global sms
     sms.set(text)
-
-def log_data(data):
-    try:
-        with open(dfl.DATA_DIR + '/' + cfg.DATA_FILE, 'a') as data_file:
-            data_file.write('{}\r\n'.format(data))
-        log(data)
-    except Exception as err:
-        log(type(err).__name__, err, type='e')  # DEBUG
+'''
+async def log_data(data):
+    global f_lock
+    async with f_lock:
+        try:
+            with open(dfl.DATA_DIR + '/' + cfg.DATA_FILE, 'a') as data_file:
+                data_file.write('{}\r\n'.format(data))
+            log(data)
+        except Exception as err:
+            log(type(err).__name__, err, type='e')  # DEBUG
+'''
+async def log_data(data):
+    import _thread
+    global f_lock
+    evt = asyncio.Event()  # Scheduler event.
+    def writer():
+        try:
+            with open(dfl.DATA_DIR + '/' + cfg.DATA_FILE, 'a') as fa:
+                fa.write('{}\r\n'.format(data))
+            log(data)
+        except Exception as err:
+            log(type(err).__name__, err, type='e')
+        if cfg.DEBUG:
+            with open(dfl.DATA_DIR + '/' + cfg.DATA_FILE) as fr:
+                for ln in fr:
+                    print(ln)
+        evt.set()
+    async with f_lock:
+        _thread.start_new_thread(writer, ())  # read last byte from $self.file
+        await asyncio.sleep_ms(10)
+        await evt.wait()
+        evt.clear()
 
 def files_to_send():
 

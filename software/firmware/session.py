@@ -2,7 +2,7 @@ import uasyncio as asyncio
 import pyb
 import select
 import time
-import configs.dfl as dfl
+from configs import dfl
 
 logging = False
 loggedin = False

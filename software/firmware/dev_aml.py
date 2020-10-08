@@ -1,8 +1,8 @@
 import uasyncio as asyncio
 import pyb
 import time
-import tools.utils as utils
-from configs import dfl, cfg
+from tools.utils import log, log_data, unix_epoch, iso8601, timesync
+from configs import dfl
 from device import DEVICE
 
 ENTER = '\r'
@@ -32,12 +32,11 @@ class CTD(DEVICE):
             await self.set('SCAN SALINITY')
             await self.set('SCAN SV')
             await self.zero()
-            if kwargs and 'time_sync' in kwargs:
-                await kwargs['time_sync'].wait()
-                await self.set_clock()
-                await self.set_log()
-                await self.set('SCAN LOGGING')
-                utils.log(self.__qualname__, 'successfully initialised')
+            await timesync.wait()
+            await self.set_clock()
+            await self.set_log()
+            await self.set('SCAN LOGGING')
+            log(self.__qualname__, 'successfully initialised')
         self.uart.deinit()
         self.off()
 
@@ -49,7 +48,7 @@ class CTD(DEVICE):
             self.data = self.data.decode('utf-8')
             return True
         except UnicodeError:
-            utils.log(self.__qualname__, 'communication error')
+            log(self.__qualname__, 'communication error')
             return False
 
     async def brk(self):
@@ -61,7 +60,7 @@ class CTD(DEVICE):
             try:
                 self.data = await asyncio.wait_for(self.sreader.read(128), self.prompt_timeout)
             except:
-                utils.log(self.__qualname__, 'no answer')
+                log(self.__qualname__, 'no answer')
                 return False
             if self.decoded():
                 if self.data.endswith(PROMPT):
@@ -100,7 +99,7 @@ class CTD(DEVICE):
         try:
             self.data = await asyncio.wait_for(self.sreader.readline(), self.timeout)
         except asyncio.TimeoutError:
-            utils.log(self.__qualname__, 'no answer')
+            log(self.__qualname__, 'no answer')
             return False
         if self.decoded():
             return True
@@ -115,9 +114,9 @@ class CTD(DEVICE):
                     date = self.data[-10:]
                 if await self.dis('TIME'):
                     time = self.data[-11:]
-                utils.log(self.__qualname__,'instrument clock synchronized {}T{}Z'.format(date, time))
+                log(self.__qualname__,'instrument clock synchronized {}T{}Z'.format(date, time))
                 return
-        utils.log(self.__qualname__, 'unable to synchronize the instrument clock', type='e')
+        log(self.__qualname__, 'unable to synchronize the instrument clock', type='e')
 
     async def set_date(self):
         CMD = 'DATE'
@@ -137,18 +136,18 @@ class CTD(DEVICE):
         CMD = 'S'
         if await self.set(CMD + ' {:0d} S'.format(self.sample_rate)):
             if await self.dis(CMD):
-                utils.log(self.__qualname__, self.data)
+                log(self.__qualname__, self.data)
         else:
-            utils.log(self.__qualname__, 'unable to set the sample rate', type='e')
+            log(self.__qualname__, 'unable to set the sample rate', type='e')
 
     async def set_log(self):
         CMD = 'LOG'
         now = time.localtime()
         if await self.set(CMD + ' {:04d}{:02d}{:02d}.txt'.format(now[0], now[1], now[2])):
             if await self.dis(CMD):
-                utils.log(self.__qualname__, self.data)
+                log(self.__qualname__, self.data)
         else:
-            utils.log(self.__qualname__, 'unable to create log', type='e')
+            log(self.__qualname__, 'unable to create log', type='e')
 
     async def zero(self):
         #
@@ -162,9 +161,9 @@ class CTD(DEVICE):
                 if await self.reply():
                     if self.data.startswith(CMD):
                         if await self.reply():
-                            utils.log(self.__qualname__, self.data[:-2])
+                            log(self.__qualname__, self.data[:-2])
                             return
-                utils.log(self.__qualname__, 'unable to zero pressure at surface', type='e')
+                log(self.__qualname__, 'unable to zero pressure at surface', type='e')
 
 
     def format_data(self):
@@ -187,21 +186,21 @@ class CTD(DEVICE):
                     return True
         return False
 
-    def log(self):
+    async def log(self):
         self.ts = time.time()
         self.format_data()
-        utils.log_data(
+        await log_data(
             dfl.DATA_SEPARATOR.join(
                 [
                     self.config['String_Label'],
-                    str(utils.unix_epoch(self.ts)),
-                    utils.iso8601(self.ts)  # yyyy-mm-ddThh:mm:ssZ (controller)
+                    str(unix_epoch(self.ts)),
+                    iso8601(self.ts)  # yyyy-mm-ddThh:mm:ssZ (controller)
                 ]
                 + self.data
             )
         )
 
-    async def main(self, lock, tasks=[]):
+    async def main(self, tasks=[]):
         self.on()
         self.init_uart()
         await asyncio.sleep(1)
@@ -212,11 +211,10 @@ class CTD(DEVICE):
             self.data = await asyncio.wait_for(self.sreader.readline(), 2)
         except asyncio.TimeoutError:
             self.data = b''
-            utils.log(self.__qualname__, 'no data received', type='e')  # DEBUG
+            log(self.__qualname__, 'no data received', type='e')  # DEBUG
         if self.data:
             if self.decoded():
-                async with lock:
-                    self.log()
+                await self.log()
         pyb.LED(3).off()
         self.uart.deinit()
         self.off()
@@ -228,7 +226,7 @@ class UV(DEVICE):
         self.warmup_interval = self.config['Warmup_Interval']
 
     async def start_up(self, **kwargs):
-        pass
+        await asyncio.sleep(0)
 
     async def main(self, *args):
         self.on()
