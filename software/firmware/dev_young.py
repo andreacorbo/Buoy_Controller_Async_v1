@@ -1,6 +1,9 @@
+# dev_young.py
+# MIT license; Copyright (c) 2020 Andrea Corbo
+
 import uasyncio as asyncio
-import pyb
 import time
+import pyb
 from math import sin, cos, radians, atan2, degrees, pow, sqrt
 from tools.utils import log, log_data, unix_epoch, iso8601, uart2_sema
 from device import DEVICE
@@ -18,7 +21,7 @@ class METEO(DEVICE):
         self.string_label = self.config['String_Label']
         self.records = 0
 
-    async def start_up(self, **kwargs):
+    async def startup(self, **kwargs):
         async with self.uart_sema:
             self.on()
             self.init_uart()
@@ -223,7 +226,7 @@ class METEO(DEVICE):
                 )
             )
 
-    async def main(self, tasks=[]):
+    async def main(self):
         async with self.uart_sema:
             self.on()
             self.init_uart()

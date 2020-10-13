@@ -7,14 +7,14 @@
 			"Bits":8,
 			"Parity":"None",
 			"Stop":1,
-			"Timeout":10,
-			"Timeout_Char":10,
 			"Flow_Control":0,
-			"Read_Buf_Len":512,
-			"Write_Buf_Len":0,
+			"Timeout":250,
+			"Timeout_Char":250,
+			"Read_Buf_Len":128,
+			"Write_Buf_Len":128,
 			"Read_Char_Attempt":10
 		},
-		"Warmup_Interval":120,
+		"Warmup_Interval":300,
 		"Samples":8,
 		"Sample_Rate":4
 	}

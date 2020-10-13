@@ -1,11 +1,14 @@
+# tools/ymodem.py
+# MIT license; Copyright (c) 2020 Andrea Corbo
+
 import uasyncio as asyncio
 import time
 import os
 import _thread
 from tools.functools import partial
-from tools.utils import verbose, f_lock
+from tools.utils import verbose, f_lock, dailyfile
 import tools.shutil as shutil
-from configs import dfl, cfg
+from configs import cfg
 
 #
 # Protocol bytes
@@ -65,6 +68,7 @@ class YMODEM:
         self.tmp_pfx = tmp_pfx
         self.sent_pfx = sent_pfx
         self.bkp_pfx = bkp_pfx
+        self.daily = dailyfile
         self.retry = retry
         self.timeout = timeout
         self.mode = mode
@@ -72,7 +76,7 @@ class YMODEM:
 
     async def send(self, files):
         #
-        # Sends a list of files.
+        # Sends multiple files.
         #
         event = asyncio.Event()  # Event to wait for threads completion.
 
@@ -216,7 +220,7 @@ class YMODEM:
             self.filename = self.file.split('/')[-1]
             if self.file != '\x00':
                 self.filename = cfg.HOSTNAME.lower() + '/' + self.file.split('/')[-1]  # Adds system name to filename.
-                if self.file.split('/')[-1] == cfg.DATA_FILE:
+                if self.file.split('/')[-1] == self.daily:
                     self.file = await bkp_file()
                 #try:
                 #    stream = open(self.file)
@@ -376,29 +380,24 @@ class YMODEM:
                 error_count = 0
                 cancel = 0
                 while error_count < self.retry:
-                    await asyncio.sleep(0)
                     char = await self.agetc(1, self.timeout)
-                    await asyncio.sleep(0)
                     if not char:  # handle rx errors
                         verbose('TIMEOUT OCCURRED, RETRY...')
+                        error_count += 1
                         return 'resend'
                     elif char == ACK:
-                        await asyncio.sleep(0)
                         verbose('<-- ACK TO PACKET {}'.format(self.sequence))
-                        await asyncio.sleep(0)
                         self.success_count += 1
-                        await asyncio.sleep(0)
                         self.pointer = self.tpointer  # Updates pointer
                         _thread.start_new_thread(set_last_byte, ())  # keep track of last successfully transmitted packet
                         await asyncio.sleep_ms(10)
                         await event.wait()
                         event.clear()
-                        await asyncio.sleep(0)
                         self.sequence = (self.sequence + 1) % 0x100  # keep track of sequence
-                        await asyncio.sleep(0)
                         return True
                     elif char == NAK:
                         verbose('<-- NAK')
+                        error_count += 1
                         return 'resend'
                     elif char == CAN:
                         verbose('<-- CAN')
@@ -411,6 +410,7 @@ class YMODEM:
                             continue  # wait for a second CAN
                     else:
                         verbose('UNATTENDED CHAR {}, RETRY...'.format(char))
+                        error_count += 1
                         return 'resend'
                     await asyncio.sleep(0)
                 verbose('TOO MANY ERRORS, ABORTING...')
@@ -438,7 +438,6 @@ class YMODEM:
                     await asyncio.sleep(0)
                     continue  # resend EOT
                 verbose('EOT -->')
-                await asyncio.sleep(0)
                 char = await self.agetc(1, self.timeout)  # waiting for reply
                 if not char:  # handle rx errors
                     verbose('TIMEOUT OCCURRED WHILE WAITING FOR REPLY TO EOT, RETRY...')
@@ -455,7 +454,7 @@ class YMODEM:
             verbose('TOO MANY ERRORS, ABORTING...')
             return False
 
-        ####################### Starts transmission. ###########################
+        ###################### Send routine starts here ########################
         if not await begin_transmission():
             return False
         count = 0
@@ -488,7 +487,7 @@ class YMODEM:
         for _ in range(count):
             await self.aputc(CAN, 60)  # handle tx errors
             verbose('CAN -->')
-            await asyncio.sleep(0)
+            await asyncio.sleep(1)
 
     async def ack(self):
         error_count = 0
@@ -536,7 +535,7 @@ class YMODEM:
             calculated_sum = await self.calc_crc(self.data[:-2])
             valid = bool(received_sum == calculated_sum)
             if not valid:
-                verbose('CHECKSUM FAIL EXPECTED({:04x}) GOT({:4x})'.format(received_sum, calculated_sum))
+                verbose('CRC FAIL EXPECTED({:04x}) GOT({:4x})'.format(received_sum, calculated_sum))
         else:
             self.checksum = bytearray([self.data[-1]])
             received_sum = self.checksum[0]

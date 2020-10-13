@@ -1,5 +1,8 @@
-import pyb
+# boot.py
+# MIT license; Copyright (c) 2020 Andrea Corbo
+
 import os
+import pyb
 
 pyb.freq(84000000)  # Sets main clock to reduce power consumption.
 

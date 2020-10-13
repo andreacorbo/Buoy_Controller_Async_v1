@@ -1,5 +1,10 @@
+# BuoyControllerAsync v1.1
+# main.py
+# MIT license; Copyright (c) 2020 Andrea Corbo
+
 import uasyncio as asyncio
 from sched.sched import schedule
+from primitives.message import Message
 import time
 import gc
 import select
@@ -7,39 +12,40 @@ import machine
 import pyb
 import session
 import menu
-from tools.utils import iso8601, scheduling, sms, log, welcome_msg, blink, msg, timesync
+from tools.utils import iso8601, scheduling, alert, log, welcome_msg, blink, msg, timesync, disconnect
 from configs import dfl, cfg
-#
-# DEBUG
-#
+
+devs = []
+
 async def hearthbeat():
-    # Prints out 'alive!' msg.
+    await scheduling.wait()
     log('alive!')
     await asyncio.sleep(0)
 
-async def garbage():
-    # Frees ram.
+async def cleaner():
     while True:
         gc.collect()
         gc.threshold(gc.mem_free() // 4 + gc.mem_alloc())
-        await asyncio.sleep(1)
+        await asyncio.sleep_ms(1000)
 
-async def receiver():
-    # Listens on uart / usb.
+# Listens on uart / usb.
+async def listner():
+    global devs
     msg = Message()
     uart = pyb.UART(3,9600)
-    poll_ = select.poll()  # Creates a poll object to listen to.
-    poll_.register(uart, select.POLLIN)
-    poll_.register(pyb.USB_VCP(), select.POLLIN)
+    p = select.poll()  # Creates a poll object to listen to.
+    p.register(uart, select.POLLIN)
+    p.register(pyb.USB_VCP(), select.POLLIN)
     i=0
     while True:
-        await scheduling.wait()
-        poll = poll_.ipoll(0, 0)
+        await scheduling.wait() and await disconnect.wait()
+        poll = p.ipoll(0, 0)
         for stream in poll:
             byte = stream[0].read(1)
             try:
                 byte.decode('utf-8')
             except UnicodeError:
+                await asyncio.sleep(0)
                 continue
             if byte == dfl.ESC_CHAR.encode() and stream[0] == uart and not session.logging:
                 i += 1
@@ -47,40 +53,28 @@ async def receiver():
                     asyncio.create_task(session.login(msg,uart))
                     session.logging = True
             elif byte == b'\x1b' and (stream[0] == uart and session.loggedin or stream[0] != uart) and not menu.interactive:
-                asyncio.create_task(menu.main(msg,uart,devices))
+                asyncio.create_task(menu.main(msg,uart,devs))
                 msg.set(byte)  # Passes ESC to menu.
                 menu.interactive = True
             else:
                 msg.set(byte)
                 i=0
+            await asyncio.sleep(0)
         await asyncio.sleep(0)
 
-async def smsender():
-    # Wait for message from set_sms
-    await sms
-    await modem.sms(sms.value())
-    sms.clear()
+# Sends an sms as soon is generated.
+async def alerter():
+    await alert
+    await modem.sms(alert.value())
+    alert.clear()
 
-async def run(obj,tasks=[]):
-    # Launches coros.
+# Launches devs tasks.
+async def launcher(obj,tasks):
     if scheduling.is_set():  # Pauses scheduler.
-        asyncio.create_task(obj.main(tasks))
-
-def _handle_exception(loop, context):
-    import sys
-    print('Global handler')
-    sys.print_exception(context["exception"])
-    loop.stop()
-    #sys.exit()  # Drastic - loop.stop() does not work when used this way
-
-def restart():
-    # System must be restarted in order to synchronize the rtc!!!
-    log('restarting...')
-    #machine.soft_reset()
-
-log(dfl.RESET_CAUSE[machine.reset_cause()], type='e')
-
-welcome_msg()
+        if tasks:
+            asyncio.create_task(obj.main(tasks))
+        else:
+            asyncio.create_task(obj.main())
 
 #async def feed_(wdt):
 #    # Periodically feeds the watchdog timer.
@@ -90,29 +84,12 @@ welcome_msg()
 #        await asyncio.sleep_ms(dfl.WD_TIMEOUT - 5000)
 #wdt = machine.WDT(timeout=dfl.WD_TIMEOUT)
 #asyncio.create_task(feed_(wdt))
-#asyncio.create_task(garbage())  # Starts up garbage collection.
-#asyncio.create_task(receiver()) # Starts up receiver.
-#
-# Leds behaviour.
-#
-# Blue, waiting for gps fix.
-asyncio.create_task(blink(4, 1, 2000, stop_evt=timesync))
-# Yellow, initialisation sequence.
-asyncio.create_task(blink(3, 100, 1000, cancel_evt=scheduling))
-# Green, hearthbeat.
-asyncio.create_task(blink(2, 1, 2000, start_evt=timesync))
-#
-# Main.
-#
+
 async def main():
-    #
-    # Initializes the instruments.
-    #
+
+    # Creates devs objects.
+    global devs
     msg(' INIT DEVICES ')
-    #
-    # Creates devices objects.
-    #
-    devices = []
     for i in range(len(dfl.DEVS)):
         if dfl.DEVS[i]:
             dev = dfl.DEVS[i]
@@ -122,59 +99,51 @@ async def main():
             continue
         exec('import ' + dev.split('.')[0])
         exec(dev.split('.')[1].lower() + '=' + dev + '()')
-        devices.append(eval(dev.split('.')[1].lower()))
+        devs.append(eval(dev.split('.')[1].lower()))
         await asyncio.sleep(0)
+    await asyncio.sleep(1)  # Waits 1 second to allow devs properly power on.
 
-    await asyncio.sleep(1)
-    #
-    # Executes devices start_up routines.
-    #
+    # Executes devs startup routines.
     init_tasks = []
-    for dev in devices:
-        init_tasks.append(asyncio.create_task(dev.start_up()))
+    for dev in devs:
+        init_tasks.append(asyncio.create_task(dev.startup()))
         await asyncio.sleep(0)
-    await asyncio.gather(*init_tasks, return_exceptions=True)  # Waits until all instruments have been started up.
+    # Waits until all instruments have been started up.
+    await asyncio.gather(*init_tasks, return_exceptions=True)
 
+    # Initialises the scheduler.
     msg(' START SCHEDULER ')
-
     scheduling.set()
+    for c in cfg.CRON:
+        asyncio.create_task(schedule(
+            launcher,
+            eval(c[0]), # device object
+            c[1],       # device tasks
+            wday=c[-7],
+            month=c[-6],
+            mday=c[-5],
+            hrs=c[-4],
+            mins=c[-3],
+            secs=c[-2],
+            times=c[-1]
+            ))
+    #asyncio.create_task(schedule(hearthbeat, hrs=None, mins=None, secs=range(0,60,2)))
+    while True:
+        await asyncio.sleep(60)  # Keeps scheduler running forever.
 
-    #for task in cfg.CRON:
-    #    asyncio.create_task(schedule(
-    #        run,                                    # launcher
-    #        eval(task[0]),                          # device object
-    #        task[1],                                # device tasks
-    #        eval(task[2]) if task[2] else task[2],  # file lock
-    #        wday=task[-7],
-    #        month=task[-6],
-    #        mday=task[-5],
-    #        hrs=task[-4],
-    #        mins=task[-3],
-    #        secs=task[-2],
-    #        times=task[-1]
-    #        ))
-
-    #asyncio.create_task(schedule(run, gps, ['last_fix'], hrs=None, mins=range(5,60,10)))
-    #asyncio.create_task(schedule(run, gps, ['log','last_fix'], hrs=None, mins=range(0,60,10)))
-    #asyncio.create_task(schedule(run, meteo, ['log'], hrs=None, mins=range(0,60,10), secs=1))
-    #asyncio.create_task(schedule(run, ctd, ['log'], hrs=None, mins=range(0,60,10)))
-    #asyncio.create_task(schedule(run, adcp, ['log'], hrs=None, mins=range(0,60,10)))
-    #asyncio.create_task(schedule(run, sysmon, ['log'], hrs=None, mins=range(0,60,10)))
-    #asyncio.create_task(schedule(run, uv, hrs=None, mins=range(0,60,10)))
-    #asyncio.create_task(schedule(modem.data_transfer, hrs=None, mins=range(5,60,30)))
-    asyncio.create_task(schedule(restart, hrs=None, mins=range(0,60,5)))
-    asyncio.create_task(schedule(hearthbeat, hrs=None, mins=None, secs=range(0,60,2)))
-    #asyncio.create_task(smsender())
-
-#
-# Loop forever...
-#
+############################ Program starts here ###############################
+log(dfl.RESET_CAUSE[machine.reset_cause()], type='e')
+welcome_msg()
+asyncio.create_task(blink(4, 1, 2000, stop_evt=timesync))  # Blue, no gps fix.
+asyncio.create_task(blink(3, 100, 1000, cancel_evt=scheduling))  # Yellow, initialisation.
+asyncio.create_task(blink(2, 1, 2000, start_evt=timesync))  # Green, operating.
+asyncio.create_task(listner())
+asyncio.create_task(alerter())
+asyncio.create_task(cleaner())
 try:
-    loop = asyncio.get_event_loop()
-    loop.set_exception_handler(_handle_exception)
-    loop.create_task(main())
-    loop.run_forever()
+    asyncio.run(main())
+    #loop.set_exception_handler(_handle_exception)
 except KeyboardInterrupt:
     pass
 finally:
-    asyncio.new_event_loop()  # Clear retained state
+    asyncio.new_event_loop()  # Clear retained state.

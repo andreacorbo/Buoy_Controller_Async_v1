@@ -10,7 +10,16 @@ ESC_CHAR = "#"
 PASSWD = "ogsp4lme"
 LOGIN_ATTEMPTS = 3
 SESSION_TIMEOUT = 120   # sec.
-DEVS = (None,None,None,None,None,"dev_gps.GPS","dev_modem.MODEM","dev_board.SYSMON")  # Ordered as bob ports
+DEVS = (
+    None,
+    None,
+    None,
+    None,
+    None,
+    "dev_gps.GPS",
+    "dev_modem.MODEM",
+    "dev_board.SYSMON"
+    )  # Ordered as bob ports
 UARTS = (2,4,None,6,1,2,3)    # Ordered as bob ports.
 CTRL_PINS = ("X12","Y6","Y4","Y3","X11","Y7","Y5")    # Ordered as bob ports.
 WD_TIMEOUT = 30000  # 1000ms < watchdog timer timeout < 32000ms

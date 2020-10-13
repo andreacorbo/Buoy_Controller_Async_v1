@@ -5,9 +5,9 @@
 			"Bits":8,
 			"Parity":"None",
 			"Stop":1,
-			"Timeout":10,
-			"Timeout_Char":10,
 			"Flow_Control":0,
+			"Timeout":250,
+			"Timeout_Char":250,
 			"Read_Buf_Len":256,
 			"Write_Buf_Len":256,
 			"Read_Char_Attempt":10

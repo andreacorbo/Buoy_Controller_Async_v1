@@ -1,10 +1,13 @@
+# dev_nortek.py
+# MIT license; Copyright (c) 2020 Andrea Corbo
+
 import uasyncio as asyncio
-import pyb
 import time
 import binascii
 import struct
 import select
 import _thread
+import pyb
 from configs import dfl, cfg
 from tools.utils import log, log_data, unix_epoch, iso8601, verbose, timesync
 from device import DEVICE
@@ -29,7 +32,7 @@ class ADCP(DEVICE):
         self.deployment_config = self.config['Adcp']['Deployment_Config']
         self.deployment_delay = self.config['Adcp']['Deployment_Delay']
 
-    async def start_up(self, **kwargs):
+    async def startup(self, **kwargs):
         self.on()
         self.init_uart()
         await asyncio.sleep(1) # Waits for uart getting ready.
@@ -93,8 +96,8 @@ class ADCP(DEVICE):
                 return True
         return False
 
+    # Computes the data checksum: b58c(hex) + sum of all words in the structure.
     async def calc_checksum(self, data):
-        # Computes the data checksum: b58c(hex) + sum of all words in the structure.
         sum=0
         j=0
         for i in range(int.from_bytes(data[2:4], 'little')-1):
@@ -111,9 +114,9 @@ class ADCP(DEVICE):
         log(self.__qualname__, 'invalid checksum calculated: {} got: {}'.format(calc_checksum, checksum))
         return False
 
+    # Sets up the instrument RTC.
+    # mm ss DD hh YY MM (3 words of 2 bytes each)
     async def set_clock(self):
-        # Sets up the instrument RTC.
-        # mm ss DD hh YY MM (3 words of 2 bytes each)
         async def get_clock():
             if await self.brk():
                 await self.swriter.awrite('RC')
@@ -135,7 +138,7 @@ class ADCP(DEVICE):
         if await self.brk():
             now = time.localtime()
             await self.swriter.awrite('SC')
-            await self.swriter.awrite(binascii.unhexlify('{:02d}{:02d}{:02d}{:02d}{:02d}{:02d}'.format(now[4], now[5], now[2], now[3], int(str(now[0])[2:]), now[1])))
+            await self.swriter.awrite(binascii.unhexlify('{:02d}{:02d}{:02d}{:02d}{:02d}{:02d}'.format(now[4], now[5]+1, now[2], now[3], int(str(now[0])[2:]), now[1])))
             if await self.reply():
                 if self.ack():
                     log(self.__qualname__, 'instrument clock synchronized {}'.format(await get_clock()))
@@ -143,8 +146,8 @@ class ADCP(DEVICE):
             log(self.__qualname__, 'unable to synchronize the instrument clock', type='e')
             return False
 
+    # Retreives the complete configuration from the instrument.
     async def get_cfg(self):
-        # Retreives the complete configuration from the instrument.
         flag = False
         def filewriter():
             nonlocal flag
@@ -171,7 +174,7 @@ class ADCP(DEVICE):
 
     async def parse_cfg(self):
 
-        def parse_hw_cfg(bytestring):
+        def parse_hw_cfg(bs):
 
             def decode_hw_cfg(conf):
                 try:
@@ -190,23 +193,23 @@ class ADCP(DEVICE):
 
             try:
                 return (
-                    '{:02x}'.format(bytestring[0]),                                 # [0] Sync
-                    '{:02x}'.format(int.from_bytes(bytestring[1:2], 'little')),     # [1] Id
-                    int.from_bytes(bytestring[2:4], 'little'),                      # [2] Size
-                    bytestring[4:18].decode('ascii'),                               # [3] SerialNo
-                    decode_hw_cfg(int.from_bytes(bytestring[18:20], 'little')),     # [4] Config
-                    int.from_bytes(bytestring[20:22], 'little'),                    # [5] Frequency
-                    bytestring[22:24],                                              # [6] PICVersion
-                    int.from_bytes(bytestring[24:26], 'little'),                    # [7] HWRevision
-                    int.from_bytes(bytestring[26:28], 'little'),                    # [8] RecSize
-                    decode_hw_status(int.from_bytes(bytestring[28:30], 'little')),  # [9] Status
-                    bytestring[30:42],                                              # [10] Spare
-                    bytestring[42:46].decode('ascii')                               # [11] FWVersion
+                    '{:02x}'.format(bs[0]),                                 # [0] Sync
+                    '{:02x}'.format(int.from_bytes(bs[1:2], 'little')),     # [1] Id
+                    int.from_bytes(bs[2:4], 'little'),                      # [2] Size
+                    bs[4:18].decode('ascii'),                               # [3] SerialNo
+                    decode_hw_cfg(int.from_bytes(bs[18:20], 'little')),     # [4] Config
+                    int.from_bytes(bs[20:22], 'little'),                    # [5] Frequency
+                    bs[22:24],                                              # [6] PICVersion
+                    int.from_bytes(bs[24:26], 'little'),                    # [7] HWRevision
+                    int.from_bytes(bs[26:28], 'little'),                    # [8] RecSize
+                    decode_hw_status(int.from_bytes(bs[28:30], 'little')),  # [9] Status
+                    bs[30:42],                                              # [10] Spare
+                    bs[42:46].decode('ascii')                               # [11] FWVersion
                     )
             except Exception as err:
                 log(self.__qualname__, 'parse_cfg__', type(err).__name__, err)
 
-        def parse_head_cfg(bytestring):
+        def parse_head_cfg(bs):
 
             def decode_head_cfg(conf):
                 try:
@@ -221,123 +224,120 @@ class ADCP(DEVICE):
 
             try:
                 return (
-                    '{:02x}'.format(bytestring[0]),                               # [0] Sync
-                    '{:02x}'.format(int.from_bytes(bytestring[1:2], 'little')),   # [1] Id
-                    int.from_bytes(bytestring[2:4], 'little') * 2,                # [2] Size
-                    decode_head_cfg(int.from_bytes(bytestring[4:6], 'little')),   # [3] Config
-                    int.from_bytes(bytestring[6:8], 'little'),                    # [4] Frequency
-                    bytestring[8:10],                                             # [5] Type
-                    bytestring[10:22].decode('ascii'),                            # [6] SerialNo
-                    bytestring[22:198],                                           # [7] System
-                    bytestring[198:220],                                          # [8] Spare
-                    int.from_bytes(bytestring[220:222], 'little')                 # [9] NBeams
+                    '{:02x}'.format(bs[0]),                               # [0] Sync
+                    '{:02x}'.format(int.from_bytes(bs[1:2], 'little')),   # [1] Id
+                    int.from_bytes(bs[2:4], 'little') * 2,                # [2] Size
+                    decode_head_cfg(int.from_bytes(bs[4:6], 'little')),   # [3] Config
+                    int.from_bytes(bs[6:8], 'little'),                    # [4] Frequency
+                    bs[8:10],                                             # [5] Type
+                    bs[10:22].decode('ascii'),                            # [6] SerialNo
+                    bs[22:198],                                           # [7] System
+                    bs[198:220],                                          # [8] Spare
+                    int.from_bytes(bs[220:222], 'little')                 # [9] NBeams
                     )
             except Exception as err:
                 log(self.__qualname__, 'parse_head_cfg', type(err).__name__, err)
 
-        def parse_usr_cfg(bytestring):
+        def parse_usr_cfg(bs):
 
-            def decode_usr_timctrlreg(bytestring):
+            def decode_usr_timctrlreg(bs):
                 try:
-                    return '{:016b}'.format(bytestring)
+                    return '{:016b}'.format(bs)
                 except Exception as err:
                     log(self.__qualname__, 'decode_usr_timctrlreg', type(err).__name__, err)
 
-            def decode_usr_pwrctrlreg(bytestring):
+            def decode_usr_pwrctrlreg(bs):
                 try:
-                    return '{:016b}'.format(bytestring)
+                    return '{:016b}'.format(bs)
                 except Exception as err:
                     log(self.__qualname__, 'decode_usr_pwrctrlreg', type(err).__name__, err)
 
-            def decode_usr_mode(bytestring):
+            def decode_usr_mode(bs):
                 try:
-                    return '{:016b}'.format(bytestring)
+                    return '{:016b}'.format(bs)
                 except Exception as err:
                     log(self.__qualname__, 'decode_usr_mode', type(err).__name__, err)
 
-            def decode_usr_modetest(bytestring):
+            def decode_usr_modetest(bs):
                 try:
-                    return '{:016b}'.format(bytestring)
+                    return '{:016b}'.format(bs)
                 except Exception as err:
                     log(self.__qualname__, 'decode_usr_modetest', type(err).__name__, err)
 
-            def decode_usr_wavemode(bytestring):
+            def decode_usr_wavemode(bs):
                 try:
-                    return '{:016b}'.format(bytestring)
+                    return '{:016b}'.format(bs)
                 except Exception as err:
                     log(self.__qualname__, 'decode_usr_wavemode', type(err).__name__, err)
 
             try:
                 return (
-                    '{:02x}'.format(bytestring[0]),                                     # [0] Sync
-                    '{:02x}'.format((int.from_bytes(bytestring[1:2], 'little'))),       # [1] Id
-                    int.from_bytes(bytestring[2:4], 'little'),                          # [2] Size
-                    int.from_bytes(bytestring[4:6], 'little'),                          # [3] T1
-                    int.from_bytes(bytestring[6:8], 'little'),                          # [4] T2, BlankingDistance
-                    int.from_bytes(bytestring[8:10], 'little'),                         # [5] T3
-                    int.from_bytes(bytestring[10:12], 'little'),                        # [6] T4
-                    int.from_bytes(bytestring[12:14], 'little'),                        # [7] T5
-                    int.from_bytes(bytestring[14:16], 'little'),                        # [8] NPings
-                    int.from_bytes(bytestring[16:18], 'little'),                        # [9] AvgInterval
-                    int.from_bytes(bytestring[18:20], 'little'),                        # [10] NBeams
-                    decode_usr_timctrlreg(int.from_bytes(bytestring[20:22], 'little')), # [11] TimCtrlReg
-                    decode_usr_pwrctrlreg(int.from_bytes(bytestring[22:24], 'little')), # [12] Pwrctrlreg
-                    bytestring[24:26],                                                  # [13] A1 Not used.
-                    bytestring[26:28],                                                  # [14] B0 Not used.
-                    bytestring[28:30],                                                  # [15] B1 Not used.
-                    int.from_bytes(bytestring[30:32], 'little'),                        # [16] CompassUpdRate
-                    self.coord_system[int.from_bytes(bytestring[32:34], 'little')],     # [17] CoordSystem
-                    int.from_bytes(bytestring[34:36], 'little'),                        # [18] Nbins
-                    int.from_bytes(bytestring[36:38], 'little'),                        # [19] BinLength
-                    int.from_bytes(bytestring[38:40], 'little'),                        # [20] MeasInterval
-                    bytestring[40:46].decode('utf-8'),                                  # [21] DeployName
-                    int.from_bytes(bytestring[46:48], 'little'),                        # [22] WrapMode
-                    binascii.hexlify(bytestring[48:54]).decode('utf-8'),                # [23] ClockDeploy
-                    int.from_bytes(bytestring[54:58], 'little'),                        # [24] DiagInterval
-                    decode_usr_mode(int.from_bytes(bytestring[58:60], 'little')),       # [25] Mode
-                    int.from_bytes(bytestring[60:62], 'little'),                        # [26] AdjSoundSpeed
-                    int.from_bytes(bytestring[62:64], 'little'),                        # [27] NSampDiag
-                    int.from_bytes(bytestring[64:66], 'little'),                        # [28] NbeamsCellDiag
-                    int.from_bytes(bytestring[66:68], 'little'),                        # [29] NpingDiag
-                    decode_usr_modetest(int.from_bytes(bytestring[68:70], 'little')),   # [30] ModeTest
-                    int.from_bytes(bytestring[68:72], 'little'),                        # [31] AnaInAddr
-                    int.from_bytes(bytestring[72:74], 'little'),                        # [32] SWVersion
-                    int.from_bytes(bytestring[74:76], 'little'),                        # [33] Salinity
-                    binascii.hexlify(bytestring[76:256]),                               # [34] VelAdjTable
-                    bytestring[256:336].decode('utf-8'),                                # [35] Comments
-                    binascii.hexlify(bytestring[336:384]),                              # [36] Spare
-                    int.from_bytes(bytestring[384:386], 'little'),                      # [37] Processing Method
-                    binascii.hexlify(bytestring[386:436]),                              # [38] Spare
-                    decode_usr_wavemode(int.from_bytes(bytestring[436:438], 'little')), # [39] Wave Measurement Mode
-                    int.from_bytes(bytestring[438:440], 'little'),                      # [40] DynPercPos
-                    int.from_bytes(bytestring[440:442], 'little'),                      # [41] T1
-                    int.from_bytes(bytestring[442:444], 'little'),                      # [42] T2
-                    int.from_bytes(bytestring[444:446], 'little'),                      # [43] T3
-                    int.from_bytes(bytestring[446:448], 'little'),                      # [44] NSamp
-                    bytestring[448:450].decode('utf-8'),                                # [45] A1 Not used.
-                    bytestring[450:452].decode('utf-8'),                                # [46] B0 Not used.
-                    bytestring[452:454].decode('utf-8'),                                # [47] B1 Not used.
-                    binascii.hexlify(bytestring[454:456]),                              # [48] Spare
-                    int.from_bytes(bytestring[456:458], 'little'),                      # [49] AnaOutScale
-                    int.from_bytes(bytestring[458:460], 'little'),                      # [50] CorrThresh
-                    binascii.hexlify(bytestring[460:462]),                              # [51] Spare
-                    int.from_bytes(bytestring[462:464], 'little'),                      # [52] TiLag2
-                    binascii.hexlify(bytestring[464:486]),                              # [53] Spare
-                    bytestring[486:510]                                                 # [54] QualConst
+                    '{:02x}'.format(bs[0]),                                     # [0] Sync
+                    '{:02x}'.format((int.from_bytes(bs[1:2], 'little'))),       # [1] Id
+                    int.from_bytes(bs[2:4], 'little'),                          # [2] Size
+                    int.from_bytes(bs[4:6], 'little'),                          # [3] T1
+                    int.from_bytes(bs[6:8], 'little'),                          # [4] T2, BlankingDistance
+                    int.from_bytes(bs[8:10], 'little'),                         # [5] T3
+                    int.from_bytes(bs[10:12], 'little'),                        # [6] T4
+                    int.from_bytes(bs[12:14], 'little'),                        # [7] T5
+                    int.from_bytes(bs[14:16], 'little'),                        # [8] NPings
+                    int.from_bytes(bs[16:18], 'little'),                        # [9] AvgInterval
+                    int.from_bytes(bs[18:20], 'little'),                        # [10] NBeams
+                    decode_usr_timctrlreg(int.from_bytes(bs[20:22], 'little')), # [11] TimCtrlReg
+                    decode_usr_pwrctrlreg(int.from_bytes(bs[22:24], 'little')), # [12] Pwrctrlreg
+                    bs[24:26],                                                  # [13] A1 Not used.
+                    bs[26:28],                                                  # [14] B0 Not used.
+                    bs[28:30],                                                  # [15] B1 Not used.
+                    int.from_bytes(bs[30:32], 'little'),                        # [16] CompassUpdRate
+                    self.coord_system[int.from_bytes(bs[32:34], 'little')],     # [17] CoordSystem
+                    int.from_bytes(bs[34:36], 'little'),                        # [18] Nbins
+                    int.from_bytes(bs[36:38], 'little'),                        # [19] BinLength
+                    int.from_bytes(bs[38:40], 'little'),                        # [20] MeasInterval
+                    bs[40:46].decode('utf-8'),                                  # [21] DeployName
+                    int.from_bytes(bs[46:48], 'little'),                        # [22] WrapMode
+                    binascii.hexlify(bs[48:54]).decode('utf-8'),                # [23] ClockDeploy
+                    int.from_bytes(bs[54:58], 'little'),                        # [24] DiagInterval
+                    decode_usr_mode(int.from_bytes(bs[58:60], 'little')),       # [25] Mode
+                    int.from_bytes(bs[60:62], 'little'),                        # [26] AdjSoundSpeed
+                    int.from_bytes(bs[62:64], 'little'),                        # [27] NSampDiag
+                    int.from_bytes(bs[64:66], 'little'),                        # [28] NbeamsCellDiag
+                    int.from_bytes(bs[66:68], 'little'),                        # [29] NpingDiag
+                    decode_usr_modetest(int.from_bytes(bs[68:70], 'little')),   # [30] ModeTest
+                    int.from_bytes(bs[68:72], 'little'),                        # [31] AnaInAddr
+                    int.from_bytes(bs[72:74], 'little'),                        # [32] SWVersion
+                    int.from_bytes(bs[74:76], 'little'),                        # [33] Salinity
+                    binascii.hexlify(bs[76:256]),                               # [34] VelAdjTable
+                    bs[256:336].decode('utf-8'),                                # [35] Comments
+                    binascii.hexlify(bs[336:384]),                              # [36] Spare
+                    int.from_bytes(bs[384:386], 'little'),                      # [37] Processing Method
+                    binascii.hexlify(bs[386:436]),                              # [38] Spare
+                    decode_usr_wavemode(int.from_bytes(bs[436:438], 'little')), # [39] Wave Measurement Mode
+                    int.from_bytes(bs[438:440], 'little'),                      # [40] DynPercPos
+                    int.from_bytes(bs[440:442], 'little'),                      # [41] T1
+                    int.from_bytes(bs[442:444], 'little'),                      # [42] T2
+                    int.from_bytes(bs[444:446], 'little'),                      # [43] T3
+                    int.from_bytes(bs[446:448], 'little'),                      # [44] NSamp
+                    bs[448:450].decode('utf-8'),                                # [45] A1 Not used.
+                    bs[450:452].decode('utf-8'),                                # [46] B0 Not used.
+                    bs[452:454].decode('utf-8'),                                # [47] B1 Not used.
+                    binascii.hexlify(bs[454:456]),                              # [48] Spare
+                    int.from_bytes(bs[456:458], 'little'),                      # [49] AnaOutScale
+                    int.from_bytes(bs[458:460], 'little'),                      # [50] CorrThresh
+                    binascii.hexlify(bs[460:462]),                              # [51] Spare
+                    int.from_bytes(bs[462:464], 'little'),                      # [52] TiLag2
+                    binascii.hexlify(bs[464:486]),                              # [53] Spare
+                    bs[486:510]                                                 # [54] QualConst
                     )
             except Exception as err:
                 log(self.__qualname__, 'parse_usr_cfg', type(err).__name__, err)
 
         def filereader():
-            #
-            # Executed in a separate thread to not block scheduler.
-            #
             try:
                 with open(dfl.CONFIG_DIR + self.instrument_config, 'rb') as raw:
-                    bytestring = raw.read()
-                    self.hw_cfg = parse_hw_cfg(bytestring[0:48])         # Hardware config (48 bytes)
-                    self.head_cfg = parse_head_cfg(bytestring[48:272])   # Head config (224 bytes)
-                    self.usr_cfg = parse_usr_cfg(bytestring[272:784])    # Deployment config (512 bytes)
+                    bs = raw.read()
+                    self.hw_cfg = parse_hw_cfg(bs[0:48])         # Hardware config (48 bytes)
+                    self.head_cfg = parse_head_cfg(bs[48:272])   # Head config (224 bytes)
+                    self.usr_cfg = parse_usr_cfg(bs[272:784])    # Deployment config (512 bytes)
             except Exception as err:
                 log(self.__qualname__, 'parse_cfg', type(err).__name__, err)
             self.evt.set()
@@ -347,14 +347,16 @@ class ADCP(DEVICE):
         await self.evt.wait()
         self.evt.clear()
 
+    # Uploads a deployment config to the instrument and sets up the cron job.
     async def set_usr_cfg(self):
-        # Uploads a deployment config to the instrument and sets up the cron job.
-        bytestring = b''
+
+        bs = b''
+
         def filereader():
-            nonlocal bytestring
+            nonlocal bs
             try:
                 with open(dfl.CONFIG_DIR + self.deployment_config, 'rb') as pcf:
-                    bytestring = pcf.read()
+                    bs = pcf.read()
             except Exception as err:
                 log(self.__qualname__, 'set_usr_cfg', type(err).__name__, err)
             self.evt.set()
@@ -364,7 +366,7 @@ class ADCP(DEVICE):
             now = time.time()
             next_sampling = now - now % sampling_interval + sampling_interval
             log(self.__qualname__, 'deployment start at {}, measurement interval {}\', average interval {}\''.format(iso8601(next_sampling), sampling_interval, avg_interval))
-            deployment_start = time.localtime(next_sampling - avg_interval + self.deployment_delay)
+            deployment_start = time.localtime(next_sampling + avg_interval)
             return binascii.unhexlify('{:02d}{:02d}{:02d}{:02d}{:02d}{:02d}'.format(deployment_start[4], deployment_start[5], deployment_start[2], deployment_start[3], int(str(deployment_start[0])[2:]), deployment_start[1]))
 
         if await self.brk():
@@ -372,14 +374,15 @@ class ADCP(DEVICE):
             await asyncio.sleep_ms(10)
             await self.evt.wait()
             self.evt.clear()
-            if bytestring:
-                sampling_interval = int.from_bytes(bytestring[38:40], 'little')
-                avg_interval = int.from_bytes(bytestring[16:18], 'little')
-                for _ in cfg.CRON:
-                    if _[0] == self.__qualname__.lower():
-                        if not _[9]:  # Skips if continuos polling.
-                            _[7] = range(0,60,sampling_interval)
-                usr_cfg = bytestring[0:48] + set_deployment_start(sampling_interval, avg_interval) + bytestring[54:510]
+            if bs:
+                sampling_interval = int.from_bytes(bs[38:40], 'little')
+                avg_interval = int.from_bytes(bs[16:18], 'little')
+                for c in cfg.CRON:
+                    if c[0] == self.__qualname__.lower():
+                        if not c[-1]:  # Skips if continuos polling.
+                            c[-3] = range(sampling_interval//60-1 , 60, sampling_interval//60)
+                            c[-2] = 60 - self.deployment_delay
+                usr_cfg = bs[0:48] + set_deployment_start(sampling_interval, avg_interval) + bs[54:510]
                 checksum = await self.calc_checksum(usr_cfg)
                 await self.swriter.awrite(b'\x43\x43')
                 await self.swriter.awrite(usr_cfg + binascii.unhexlify(hex(checksum)[-2:] + hex(checksum)[2:4]))
@@ -522,7 +525,7 @@ class ADCP(DEVICE):
             record = [
             self.config['String_Label'],
             '{}'.format(str(unix_epoch(self.ts))),
-            '{}'.format(iso8601(self.ts)),                            # yyyy-mm-ddThh:mm:ssZ (controller)
+            '{}'.format(iso8601(self.ts)),                                   # yyyy-mm-ddThh:mm:ssZ (controller)
             '{:2s}/{:2s}/20{:2s}'.format(sample[2], sample[5], sample[4]),  # dd/mm/yyyy
             '{:2s}:{:2s}'.format(sample[3], sample[0]),                     # hh:mm
             '{:.2f}'.format(sample[8]),                                     # Battery
@@ -552,40 +555,48 @@ class ADCP(DEVICE):
             log(self.__qualname__, 'format_data', type(err).__name__, err)
 
     async def log(self):
-        #with open('/sd/data/aquadopp.raw','ab') as raw:
+        #with open(dfl.DATA_DIR + cfg.RAW_DIR + '/' + dailyfile() + '.prf', 'ab') as raw:
         #    raw.write(self.data)
-        await log_data(dfl.DATA_SEPARATOR.join(self.format_data(self.conv_data())))
+        try:
+            await log_data(dfl.DATA_SEPARATOR.join(self.format_data(self.conv_data())))
+        except Exception as err:
+            log(self.__qualname__, 'log', type(err).__name__, err)
 
-    async def main(self, tasks=[]):
-        # Scheduled task.
-        self.init_uart()
+    # Scheduled.
+    async def scheduled(self):
         pyb.LED(3).on()
-        #await self.parse_cfg()
         try:
             self.data = await asyncio.wait_for(self.sreader.read(1024), self.timeout)
             self.ts = time.time()
         except asyncio.TimeoutError:
             self.data = b''
             log(self.__qualname__, 'no data received', type='e')
-        if self.data and self.data != b'\x00':
+        if self.data and not self.data.startswith(b'\x00'):
             await self.log()
         pyb.LED(3).off()
         self.uart.deinit()
 
-    async def main_(self, tasks=[]):
-        # Continuos polling. DEBUG
-        self.init_uart()
-        #await self.parse_cfg()
+    # Continuos polling.
+    async def poll(self):
         poll_ = select.poll()  # Creates a poll object to listen to.
         poll_.register(self.uart, select.POLLIN)
         while True:
             poll = poll_.ipoll(0, 0)
             for stream in poll:
-                self.data = stream[0].read()
-                if self.data == b'\x00':
-                    continue
                 pyb.LED(3).on()
+                self.ts = time.time()
+                self.data = stream[0].read()
+                if self.data.startswith(b'\x00'):
+                    await asyncio.sleep(0)
+                    continue
                 await self.log()
                 pyb.LED(3).off()
                 await asyncio.sleep(0)
             await asyncio.sleep(0)
+
+    async def main(self, task='scheduled'):
+        self.init_uart()
+        if task == 'poll':
+            await self.poll()
+        else:
+            await self.scheduled()

@@ -1,5 +1,8 @@
-import pyb
+# device.py
+# MIT license; Copyright (c) 2020 Andrea Corbo
+
 import time
+import pyb
 from tools.utils import log, read_cfg
 from configs import dfl, cfg
 

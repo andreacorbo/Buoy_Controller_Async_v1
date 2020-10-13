@@ -1,6 +1,9 @@
+# dev_aml.py
+# MIT license; Copyright (c) 2020 Andrea Corbo
+
 import uasyncio as asyncio
-import pyb
 import time
+import pyb
 from tools.utils import log, log_data, unix_epoch, iso8601, timesync
 from configs import dfl
 from device import DEVICE
@@ -18,7 +21,7 @@ class CTD(DEVICE):
         self.prompt_timeout = self.config['Ctd']['Prompt_Timeout']
         self.warmup_interval = self.config['Warmup_Interval']
 
-    async def start_up(self, **kwargs):
+    async def startup(self, **kwargs):
         self.on()
         self.init_uart()
         await asyncio.sleep(1)  # Waits for uart getting ready.
@@ -40,10 +43,8 @@ class CTD(DEVICE):
         self.uart.deinit()
         self.off()
 
+    # Decodes chars in order to check wether a connection issue has occurred.
     def decoded(self):
-        #
-        # Decodes chars in order to check wether a connection issue has occurred.
-        #
         try:
             self.data = self.data.decode('utf-8')
             return True
@@ -51,10 +52,8 @@ class CTD(DEVICE):
             log(self.__qualname__, 'communication error')
             return False
 
+    # Sends a break.
     async def brk(self):
-        #
-        # Sends a break.
-        #
         while True:
             await self.swriter.awrite(ENTER)
             try:
@@ -68,10 +67,8 @@ class CTD(DEVICE):
             await asyncio.sleep_ms(500)  # TODO: check if 1s is enough
         return False
 
+    # Set commands.
     async def set(self, cmd):
-        #
-        # Set commands.
-        #
         await self.swriter.awrite('SET ' + cmd + ENTER)
         if await self.reply():
             if self.data.startswith(cmd,4):  # Ignores 'SET '.
@@ -79,10 +76,8 @@ class CTD(DEVICE):
                 return True
         return False
 
+    # Display commands.
     async def dis(self,cmd):
-        #
-        # Display commands.
-        #
         await self.swriter.awrite('DIS ' + cmd + ENTER)
         if await self.reply():
             if self.data.startswith(cmd,4):  # Ignores 'SET '.
@@ -92,10 +87,8 @@ class CTD(DEVICE):
                     return True
         return False
 
+    # Captures commands replies.
     async def reply(self):
-        #
-        # Captures commands replies.
-        #
         try:
             self.data = await asyncio.wait_for(self.sreader.readline(), self.timeout)
         except asyncio.TimeoutError:
@@ -149,10 +142,8 @@ class CTD(DEVICE):
         else:
             log(self.__qualname__, 'unable to create log', type='e')
 
+    # Corrects the barometric offset to set zero.
     async def zero(self):
-        #
-        # Corrects the barometric offset to set zero.
-        #
         if await self.scan():  # Gets one sample.
             self.format_data()
             if float(self.data[8]) < 1:  # Checks conductivity to
@@ -173,10 +164,8 @@ class CTD(DEVICE):
                 tmp.append(_)
         self.data = tmp
 
+    # Gets one sample.
     async def scan(self):
-        #
-        # Gets one sample.
-        #
         CMD = 'SCAN'
         await self.swriter.awrite(CMD + ENTER)
         if await self.reply():
@@ -200,7 +189,7 @@ class CTD(DEVICE):
             )
         )
 
-    async def main(self, tasks=[]):
+    async def main(self):
         self.on()
         self.init_uart()
         await asyncio.sleep(1)
@@ -211,7 +200,7 @@ class CTD(DEVICE):
             self.data = await asyncio.wait_for(self.sreader.readline(), 2)
         except asyncio.TimeoutError:
             self.data = b''
-            log(self.__qualname__, 'no data received', type='e')  # DEBUG
+            log(self.__qualname__, 'no data received', type='e')
         if self.data:
             if self.decoded():
                 await self.log()
@@ -225,7 +214,7 @@ class UV(DEVICE):
         DEVICE.__init__(self)
         self.warmup_interval = self.config['Warmup_Interval']
 
-    async def start_up(self, **kwargs):
+    async def startup(self, **kwargs):
         await asyncio.sleep(0)
 
     async def main(self, *args):

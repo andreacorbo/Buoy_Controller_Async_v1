@@ -1,7 +1,10 @@
+# menu.py
+# MIT license; Copyright (c) 2020 Andrea Corbo
+
 import uasyncio as asyncio
-import pyb
 import os
 import select
+import pyb
 from tools.utils import scheduling, logger, read_cfg, iso8601
 from configs import dfl, cfg
 
@@ -18,7 +21,7 @@ async def main(msg,uart,objs):
     devices = False
     device = False
     dev = None
-    utils.logger = False  # Stops log stream.
+    logger = False  # Stops log stream.
     while True:
         await msg
         if not board:
@@ -34,7 +37,7 @@ async def main(msg,uart,objs):
                         dev.toggle()
                         await device_menu(dev)
                     elif  msg.value() == b'1':
-                        await pass_through(dev,uart,utils.scheduling)
+                        await pass_through(dev,uart)
                         await device_menu(dev)
                     elif  msg.value() == b'2':
                         pass
@@ -76,7 +79,7 @@ async def main(msg,uart,objs):
                 await board_menu()
             elif msg.value() in BACKSPACE:
                 interactive = False
-                utils.logger = True
+                logger = True
                 msg.clear()
                 return
         msg.clear()
@@ -118,7 +121,7 @@ async def device_menu(obj):
 
 async def get_config(obj):
     _ = ["{:#^40}".format(" CONFIGURATION ")]
-    cfg = utils.read_cfg(obj.name.split('.')[0])[obj.name.split('.')[1][:-1]]
+    cfg = read_cfg(obj.name.split('.')[0])[obj.name.split('.')[1]]
     for k in sorted(cfg):
         if type(cfg[k]).__name__ == 'dict':
             for kk in sorted(cfg[k]):
@@ -126,12 +129,13 @@ async def get_config(obj):
                 await asyncio.sleep(0)
         else:
             _.append("{: <22}{}".format(k,cfg[k]))
+        #if scheduling.is_set():
         await asyncio.sleep(0)
     _.append("\r")
     print("\r\n".join(_))
 
 async def pass_through(obj,uart):
-    utils.scheduling.clear()
+    scheduling.clear()
     print('[P] PAUSE/RESUME\r\n[BACKSPACE] BACK\r\n')
     running = asyncio.Event()  # manages scheduler.
     running.set()  # enable scheduler
@@ -152,7 +156,7 @@ async def pass_through(obj,uart):
             if stream[0] in [uart,pyb.USB_VCP()]:
                 if byte in BACKSPACE:  # [BACKSPACE] Backs to previous menu.
                     obj.uart.deinit()
-                    utils.scheduling.set()
+                    scheduling.set()
                     return
                 elif byte == SPACE:  # [BACKSPACE] Backs to previous menu.
                     if running.is_set():
@@ -183,7 +187,7 @@ async def data_files():
     for f in data:
         stat = os.stat(dfl.DATA_DIR + "/" + f)
         size += stat[6]//1024
-        _.append("{: <5} {: <20} {}".format(str(stat[6]//1024), utils.iso8601(stat[7]), f))
+        _.append("{: <5} {: <20} {}".format(str(stat[6]//1024), iso8601(stat[7]), f))
         await asyncio.sleep(0)
     fsstat = os.statvfs(dfl.DATA_DIR)
     _.append("{} Files {}/{} kB".format(len(data), str(size), str(fsstat[2]*fsstat[0]//1024)))

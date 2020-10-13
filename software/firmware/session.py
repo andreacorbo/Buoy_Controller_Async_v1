@@ -1,7 +1,10 @@
+# session.py
+# MIT license; Copyright (c) 2020 Andrea Corbo
+
 import uasyncio as asyncio
-import pyb
-import select
 import time
+import select
+import pyb
 from configs import dfl
 
 logging = False

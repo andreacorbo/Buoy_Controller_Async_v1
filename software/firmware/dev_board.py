@@ -1,7 +1,10 @@
+# dev_board.py
+# MIT license; Copyright (c) 2020 Andrea Corbo
+
 import uasyncio as asyncio
-import pyb
 import time
 import os
+import pyb
 from tools.utils import log, log_data, unix_epoch, iso8601
 from configs import dfl
 from device import DEVICE
@@ -11,7 +14,7 @@ class SYSMON(DEVICE):
     def __init__(self):
         DEVICE.__init__(self)
 
-    async def start_up(self, **kwargs):
+    async def startup(self, **kwargs):
         await asyncio.sleep(0)
 
     async def adcall_mask(self, channels):
@@ -76,7 +79,7 @@ class SYSMON(DEVICE):
             )
         )
 
-    async def main(self, tasks=[]):
+    async def main(self):
         pyb.LED(3).on()
         core_temp = 0
         core_vbat = 0
@@ -116,6 +119,5 @@ class SYSMON(DEVICE):
         self.data.append(core_vref)
         self.data.append(vref)
         self.data.append(self.fs_freespace())
-        if 'log' in tasks:
-            await self.log()
+        await self.log()
         pyb.LED(3).off()

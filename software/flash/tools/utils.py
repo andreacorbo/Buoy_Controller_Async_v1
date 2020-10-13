@@ -1,8 +1,11 @@
+# tools/utils.py
+# MIT license; Copyright (c) 2020 Andrea Corbo
+
 import uasyncio as asyncio
-import pyb
-import json
-import os
 import time
+import os
+import json
+import pyb
 from configs import dfl, cfg
 from primitives.message import Message
 from primitives.semaphore import Semaphore
@@ -10,11 +13,11 @@ from primitives.semaphore import Semaphore
 logger = True  # Prints out messages.
 
 f_lock = asyncio.Lock()  # Data file lock.
-sms = Message()  # Sms event.
+alert = Message()  # Sms message.
 uart2_sema = Semaphore(1)  # Gps/Meteo uart semaphore.
 timesync = asyncio.Event()  # Gps fix event.
 scheduling = asyncio.Event()  # Scheduler event.
-
+disconnect = asyncio.Event()  # Modem event.
 
 def welcome_msg():
     print(
@@ -32,10 +35,12 @@ def welcome_msg():
         os.uname()[3],
         ''))
 
+# Prints out extensive messages.
 def verbose(msg):
     if cfg.VERBOSE:
         print(msg)
 
+# Reads out an device config file.
 def read_cfg(file):
     try:
         with open(dfl.CONFIG_DIR + file + dfl.CONFIG_TYPE) as cfg:
@@ -43,15 +48,21 @@ def read_cfg(file):
     except:
         log('Unable to read file {}'.format(file), type='e')
 
+# Converts embedded epoch 2000-01-01T00:00:00Z to unix epoch 1970-01-01T00:00:00Z.
 def unix_epoch(epoch):
-    # Converts embedded epoch 2000-01-01 00:00:00 to unix epoch 1970-01-01 00:00:00.
     return 946684800 + epoch
 
+# Formats utc dates according to iso8601 standardization yyyy-mm-ddThh:mm:ssZ
 def iso8601(timestamp):
-    # YYYY-MM-DD HH:MM:SS
-    return '{}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}Z'.format(time.localtime(timestamp)[0], time.localtime(timestamp)[1], time.localtime(timestamp)[2], time.localtime(timestamp)[3], time.localtime(timestamp)[4], time.localtime(timestamp)[5])
+    return '{}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}Z'.format(
+    time.localtime(timestamp)[0],
+    time.localtime(timestamp)[1],
+    time.localtime(timestamp)[2],
+    time.localtime(timestamp)[3],
+    time.localtime(timestamp)[4],
+    time.localtime(timestamp)[5])
 
-async def blink(led,dutycycle=50,period=1000, **kwargs):
+async def blink(led, dutycycle=50 ,period=1000 , **kwargs):
     while True:
         if kwargs and 'cancel_evt' in kwargs and kwargs['cancel_evt'].is_set():
             await asyncio.sleep(0)
@@ -62,7 +73,7 @@ async def blink(led,dutycycle=50,period=1000, **kwargs):
                 continue
         if kwargs and 'start_evt' in kwargs:
             await kwargs['start_evt'].wait()
-        onperiod = period//100*dutycycle
+        onperiod = period // 100 * dutycycle
         pyb.LED(led).on()
         await asyncio.sleep_ms(onperiod)
         pyb.LED(led).off()
@@ -82,48 +93,43 @@ def log(*args, **kwargs):
         type = kwargs['type']
     timestamp = iso8601(time.time())
     if logger:  # Global flag.
-        print('{: <22}{: <8}{}'.format(timestamp, args[0], ' '.join(map(str, args[1:]))))
+        print('{: <22}{: <8}{}'.format(
+        timestamp, args[0],
+        ' '.join(map(str, args[1:]))))
     if cfg.LOG_TO_FILE:
         if type in cfg.LOG_LEVEL:
             try:
                 with open(dfl.LOG_DIR + '/' + dfl.LOG_FILE, 'a') as f:  # TODO: start new file, zip old file, remove oldest
-                    f.write('{},{},{}\r\n'.format(timestamp, args[0], ' '.join(map(str, args[1:]))))
+                    f.write('{},{},{}\r\n'.format(
+                    timestamp,
+                    args[0],
+                    ' '.join(map(str, args[1:]))))
             except Exception as err:
                 print(err)
 
-def set_sms(text):
-    # Set sms text, works one-to-one with smsender.
-    global sms
-    sms.set(text)
-'''
-async def log_data(data):
-    global f_lock
-    async with f_lock:
-        try:
-            with open(dfl.DATA_DIR + '/' + cfg.DATA_FILE, 'a') as data_file:
-                data_file.write('{}\r\n'.format(data))
-            log(data)
-        except Exception as err:
-            log(type(err).__name__, err, type='e')  # DEBUG
-'''
+# Set alert msg, caught by alerter.
+def set_alert(text):
+    global alert
+    alert.set(text)
+
+def dailyfile():
+    return '{:04d}{:02d}{:02d}'.format(time.localtime()[0], time.localtime()[1], time.localtime()[2])
+
 async def log_data(data):
     import _thread
     global f_lock
     evt = asyncio.Event()  # Scheduler event.
     def writer():
         try:
-            with open(dfl.DATA_DIR + '/' + cfg.DATA_FILE, 'a') as fa:
+            with open(dfl.DATA_DIR + '/' + dailyfile(), 'a') as fa:
                 fa.write('{}\r\n'.format(data))
-            log(data)
+                log(data)
         except Exception as err:
             log(type(err).__name__, err, type='e')
-        if cfg.DEBUG:
-            with open(dfl.DATA_DIR + '/' + cfg.DATA_FILE) as fr:
-                for ln in fr:
-                    print(ln)
         evt.set()
+
     async with f_lock:
-        _thread.start_new_thread(writer, ())  # read last byte from $self.file
+        _thread.start_new_thread(writer, ())
         await asyncio.sleep_ms(10)
         await evt.wait()
         evt.clear()
@@ -141,7 +147,7 @@ def files_to_send():
         return False
 
     for file in sorted(os.listdir(dfl.DATA_DIR)):
-        if file[0] not in (dfl.TMP_FILE_PFX, dfl.SENT_FILE_PFX):  # check for unsent files
+        if file[0] not in (dfl.TMP_FILE_PFX, dfl.SENT_FILE_PFX):  # Checks for unsent files.
             try:
                 int(file)
             except:
@@ -156,7 +162,6 @@ def files_to_send():
                 except:
                     pass  # Tmp file does not exist.
                 if os.stat(dfl.DATA_DIR + '/' + file)[6] > pointer:
-                    #unsent_files.append(config.DATA_DIR + '/' + file)  # Makes a list of files to send.
                     yield dfl.DATA_DIR + '/' + file
     if any(file[0] not in (dfl.TMP_FILE_PFX, dfl.SENT_FILE_PFX) for file in os.listdir(dfl.DATA_DIR)):
             yield '\x00'  # Needed to end ymodem transfer.

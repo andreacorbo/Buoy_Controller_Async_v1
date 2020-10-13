@@ -1,8 +1,11 @@
+# dev_gps.py
+# MIT license; Copyright (c) 2020 Andrea Corbo
+
 import uasyncio as asyncio
-import pyb
 import time
+import pyb
 from math import sin, cos, sqrt, atan2, radians
-from tools.utils import log, log_data, timesync, uart2_sema, set_sms
+from tools.utils import log, log_data, timesync, uart2_sema, set_alert
 from configs import cfg
 from device import DEVICE
 
@@ -19,22 +22,17 @@ class GPS(DEVICE):
         self.fixed = timesync
         self.displacement = 0
 
-    async def start_up(self, **kwargs):
-        async with self.semaphore:
-            self.on()
-        for _ in range(2):
-            await self.main(['sync_rtc'])
-            if self.fixed.is_set():
-                return
-            await asyncio.sleep(2)
-        self.fixed.set()  # Skips time synchronization.
+    async def startup(self, **kwargs):
+        await self.main('sync_rtc')
+        if not self.fixed.is_set():
+            self.fixed.set()  # Skips time synchronization.
 
     def is_fixed(self):
-        if not self.data.split(',')[2] == 'A':
-            log(self.__qualname__, 'no fix')
-            return False
-        self.fixed.set()
-        return True
+        if self.data.split(',')[2] == 'A':
+            self.fixed.set()
+            return True
+        log(self.__qualname__, 'no fix')
+        return False
 
     def last_fix(self):
         if self.fix:
@@ -44,17 +42,17 @@ class GPS(DEVICE):
 
     def calc_displacement(self):
         R = 6373.0 / 1.852  # Approximate radius of earth in nm.
-        fix = self.fix.split(',')
+        prev = self.fix.split(',')
         last = self.data.split(',')
-        prev_lat = radians(int(fix[3][0:2]) + float(fix[3][2:]) / 60)
-        prev_lon = radians(int(fix[5][0:2]) + float(fix[5][2:]) / 60)
-        last_lat = radians(int(last[3][0:2]) + float(last[3][2:]) / 60)
-        last_lon = radians(int(last[5][0:2]) + float(last[5][2:]) / 60)
-        a = sin((last_lat - prev_lat) / 2)**2 + cos(prev_lat) * cos(last_lat) * sin((last_lon - prev_lon) / 2)**2
+        p_lat = radians(int(prev[3][0:2]) + float(prev[3][2:]) / 60)
+        p_lon = radians(int(prev[5][0:2]) + float(prev[5][2:]) / 60)
+        l_lat = radians(int(last[3][0:2]) + float(last[3][2:]) / 60)
+        l_lon = radians(int(last[5][0:2]) + float(last[5][2:]) / 60)
+        a = sin((l_lat - p_lat) / 2)**2 + cos(p_lat) * cos(l_lat) * sin((l_lon - p_lon) / 2)**2
         c = 2 * atan2(sqrt(a), sqrt(1 - a))
         self.displacement =  R * c
         if self.displacement > cfg.DISPLACEMENT_THRESHOLD and float(last[7]) > 0:
-            set_sms('{}-{}-{}T{}:{}:{}Z ***ALERT*** {} is {:.3f}nm ({}m) away from prev. pos. (coord {}{}\'{} {}{}\'{}, cog {}, sog {}kn) next msg in 5\''.format(
+            set_alert('{}-{}-{}T{}:{}:{}Z ***ALERT*** {} is {:.3f}nm ({}m) away from prev. pos. (coord {}{}\'{} {}{}\'{}, cog {}, sog {}kn) next msg in 5\''.format(
             int(last[9][-2:])+2000,
             last[9][2:4],
             last[9][0:2],
@@ -74,11 +72,19 @@ class GPS(DEVICE):
             last[7]))
 
     def sync_rtc(self):
-        utc_time = self.data.split(',')[1]
-        utc_date = self.data.split(',')[9]
+        tm = self.data.split(',')[1]
+        dt = self.data.split(',')[9]
         rtc = pyb.RTC()
         try:
-            rtc.datetime((int('20'+utc_date[4:6]), int(utc_date[2:4]), int(utc_date[0:2]), 0, int(utc_time[0:2]), int(utc_time[2:4]), int(utc_time[4:6]), float(utc_time[6:])))  # rtc.datetime(yyyy, mm, dd, 0, hh, ii, ss, sss)
+            rtc.datetime((
+                int('20'+dt[4:6]),  # yyyy
+                int(dt[2:4]),       # mm
+                int(dt[0:2]),       # dd
+                0,                  # 0
+                int(tm[0:2]),       # hh
+                int(tm[2:4]),       # mm
+                int(tm[4:6]),       # ss
+                float(tm[6:])))     # sss
             log(self.__qualname__, 'rtc synchronized')
         except Exception as err:
             log(self.__qualname__, 'sync_rtc', type(err).__name__, err, type='e')
@@ -87,14 +93,14 @@ class GPS(DEVICE):
         await log_data(self.data)
 
     async def verify_checksum(self):
-        calculated_checksum = 0
-        for char in self.data[1:-5]:
-            calculated_checksum ^= ord(char)
+        cksum = 0
+        for c in self.data[1:-5]:
+            cksum ^= ord(c)
             await asyncio.sleep(0)
-        if '{:02X}'.format(calculated_checksum) != self.data[-4:-2]:
-            log(self.__qualname__, 'NMEA invalid checksum calculated: {:02X} got: {}'.format(calculated_checksum, self.data[-4:-2]))
-            return False
-        return True
+        if '{:02X}'.format(cksum) == self.data[-4:-2]:
+            return True
+        log(self.__qualname__, 'NMEA invalid checksum calculated: {:02X} got: {}'.format(cksum, self.data[-4:-2]))
+        return False
 
     def decoded(self):
         try:
@@ -104,16 +110,22 @@ class GPS(DEVICE):
             log(self.__qualname__, 'communication error', self.data)
             return False
 
-    async def main(self, tasks=[]):
+    async def main(self, task='log'):
+        if isinstance(task,str):
+            t=[]
+            t.append(task)
+        else:
+            t = task
         async with self.semaphore:
-            #self.on()
+            self.on()  # DEBUG
             self.init_uart()
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
             self.fixed.clear()
+            rmc = ''
             t0 = time.time()
-            while time.time() - t0 < self.warmup_interval + self.timeout:
+            while time.time() - t0 < self.warmup_interval:
                 try:
-                    self.data = await asyncio.wait_for(self.sreader.readline(), 2)
+                    self.data = await asyncio.wait_for(self.sreader.readline(), 10)
                 except asyncio.TimeoutError:
                     self.data = b''
                     log(self.__qualname__, 'no data received', type='e')
@@ -124,17 +136,17 @@ class GPS(DEVICE):
                             if self.data[3:6] == 'RMC':
                                 rmc = self.data
                                 if self.is_fixed():
-                                    if 'last_fix' in tasks:
+                                    if 'last_fix' in t:
                                         self.last_fix()
-                                    if 'sync_rtc' in tasks:
+                                    if 'sync_rtc' in t:
                                         self.sync_rtc()
                                     break
                 await asyncio.sleep(0)
-            if 'log' in tasks and rmc:
+            if 'log' in t and rmc:
                 self.data = rmc[:-2]
                 await self.log()
             self.uart.deinit()  # Releases the uart to the meteo.
             self.off()  # Switches off itself to avoid conflicts with the meteo.
         await asyncio.sleep(1)
-        async with self.semaphore:
-            self.on()  # Powers on itself again as soon as the meteo task ends.
+        #async with self.semaphore:
+        #    self.on()  # Powers on itself again as soon as the meteo task ends.
