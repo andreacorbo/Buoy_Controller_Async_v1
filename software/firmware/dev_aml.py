@@ -22,6 +22,7 @@ class CTD(DEVICE):
         self.warmup_interval = self.config['Warmup_Interval']
 
     async def startup(self, **kwargs):
+        await timesync.wait()
         self.on()
         self.init_uart()
         await asyncio.sleep(1)  # Waits for uart getting ready.
@@ -35,7 +36,7 @@ class CTD(DEVICE):
             await self.set('SCAN SALINITY')
             await self.set('SCAN SV')
             await self.zero()
-            await timesync.wait()
+            #await timesync.wait()
             await self.set_clock()
             await self.set_log()
             await self.set('SCAN LOGGING')

@@ -33,11 +33,12 @@ class ADCP(DEVICE):
         self.deployment_delay = self.config['Adcp']['Deployment_Delay']
 
     async def startup(self, **kwargs):
+        await timesync.wait()
         self.on()
         self.init_uart()
         await asyncio.sleep(1) # Waits for uart getting ready.
         if await self.brk():
-            await timesync.wait()
+            #await timesync.wait()
             await self.set_clock()
             await self.set_usr_cfg()
             await self.get_cfg()

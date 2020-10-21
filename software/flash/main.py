@@ -76,21 +76,23 @@ async def launcher(obj,tasks):
         else:
             asyncio.create_task(obj.main())
 
-#async def feed_(wdt):
-#    # Periodically feeds the watchdog timer.
-#    while True:
-#        wdt.feed()
-#        log('feeding the wdt...')
-#        await asyncio.sleep_ms(dfl.WD_TIMEOUT - 5000)
-#wdt = machine.WDT(timeout=dfl.WD_TIMEOUT)
-#asyncio.create_task(feed_(wdt))
+# Periodically feeds the watchdog timer.
+async def feeder():
+    log('starting the wdt...')
+    wdt = machine.WDT(timeout=dfl.WD_TIMEOUT)  # Starts the watchdog timer.
+    while True:
+        wdt.feed()
+        log('feeding the wdt...')
+        await asyncio.sleep_ms(dfl.WD_TIMEOUT - 5000)
 
 async def main():
+
+    #asyncio.create_task(schedule(feeder, hrs=None, mins=None, secs=range(0,60,5), times=1))
 
     # Creates devs objects.
     global devs
     msg(' INIT DEVICES ')
-    for i in range(len(dfl.DEVS)):
+    for i in reversed(range(len(dfl.DEVS))):  # Gps first!
         if dfl.DEVS[i]:
             dev = dfl.DEVS[i]
         elif cfg.DEVS[i]:
@@ -134,12 +136,14 @@ async def main():
 ############################ Program starts here ###############################
 log(dfl.RESET_CAUSE[machine.reset_cause()], type='e')
 welcome_msg()
+time.sleep(5)
 asyncio.create_task(blink(4, 1, 2000, stop_evt=timesync))  # Blue, no gps fix.
 asyncio.create_task(blink(3, 100, 1000, cancel_evt=scheduling))  # Yellow, initialisation.
 asyncio.create_task(blink(2, 1, 2000, start_evt=timesync))  # Green, operating.
 asyncio.create_task(listner())
 asyncio.create_task(alerter())
 asyncio.create_task(cleaner())
+
 try:
     asyncio.run(main())
     #loop.set_exception_handler(_handle_exception)

@@ -158,7 +158,7 @@ async def pass_through(obj,uart):
                     obj.uart.deinit()
                     scheduling.set()
                     return
-                elif byte == SPACE:  # [BACKSPACE] Backs to previous menu.
+                elif byte == SPACE:  # [SPACE] Pauses and resumes.
                     if running.is_set():
                         print('[SPACE] PAUSE\RESUME')
                         running.clear()

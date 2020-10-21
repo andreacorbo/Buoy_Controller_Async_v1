@@ -5,7 +5,7 @@ import uasyncio as asyncio
 import time
 import pyb
 from math import sin, cos, sqrt, atan2, radians
-from tools.utils import log, log_data, timesync, uart2_sema, set_alert
+from tools.utils import log, log_data, timesync, set_alert
 from configs import cfg
 from device import DEVICE
 
@@ -16,7 +16,6 @@ class GPS(DEVICE):
         self.sreader = asyncio.StreamReader(self.uart)
         self.swriter = asyncio.StreamWriter(self.uart, {})
         self.data = b''
-        self.semaphore = uart2_sema
         self.warmup_interval = self.config['Warmup_Interval']
         self.fix = None
         self.fixed = timesync
@@ -107,7 +106,7 @@ class GPS(DEVICE):
             self.data = self.data.decode('utf-8')
             return True
         except UnicodeError:
-            log(self.__qualname__, 'communication error', self.data)
+            log(self.__qualname__, 'communication error')
             return False
 
     async def main(self, task='log'):
@@ -116,37 +115,32 @@ class GPS(DEVICE):
             t.append(task)
         else:
             t = task
-        async with self.semaphore:
-            self.on()  # DEBUG
-            self.init_uart()
-            await asyncio.sleep(2)
-            self.fixed.clear()
-            rmc = ''
-            t0 = time.time()
-            while time.time() - t0 < self.warmup_interval:
-                try:
-                    self.data = await asyncio.wait_for(self.sreader.readline(), 10)
-                except asyncio.TimeoutError:
-                    self.data = b''
-                    log(self.__qualname__, 'no data received', type='e')
-                    break
-                if self.decoded():
-                    if self.data.startswith('$') and self.data.endswith('\r\n'):
-                        if await self.verify_checksum():
-                            if self.data[3:6] == 'RMC':
-                                rmc = self.data
-                                if self.is_fixed():
-                                    if 'last_fix' in t:
-                                        self.last_fix()
-                                    if 'sync_rtc' in t:
-                                        self.sync_rtc()
-                                    break
-                await asyncio.sleep(0)
-            if 'log' in t and rmc:
-                self.data = rmc[:-2]
-                await self.log()
-            self.uart.deinit()  # Releases the uart to the meteo.
-            self.off()  # Switches off itself to avoid conflicts with the meteo.
-        await asyncio.sleep(1)
-        #async with self.semaphore:
-        #    self.on()  # Powers on itself again as soon as the meteo task ends.
+        self.on()
+        self.init_uart()
+        self.fixed.clear()
+        rmc = ''
+        t0 = time.time()
+        while time.time() - t0 < self.warmup_interval:
+            try:
+                self.data = await asyncio.wait_for(self.sreader.readline(), self.warmup_interval)
+            except asyncio.TimeoutError:
+                self.data = b''
+                log(self.__qualname__, 'no data received', type='e')
+                break
+            if self.decoded():
+                if self.data.startswith('$') and self.data.endswith('\r\n'):
+                    if await self.verify_checksum():
+                        if self.data[3:6] == 'RMC':
+                            rmc = self.data
+                            if self.is_fixed():
+                                if 'last_fix' in t:
+                                    self.last_fix()
+                                if 'sync_rtc' in t:
+                                    self.sync_rtc()
+                                break
+            await asyncio.sleep(0)
+        if 'log' in t and rmc:
+            self.data = rmc[:-2]
+            await self.log()
+        self.uart.deinit()
+        self.off()

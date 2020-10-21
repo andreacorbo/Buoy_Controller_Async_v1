@@ -5,7 +5,7 @@ import uasyncio as asyncio
 import time
 import pyb
 from math import sin, cos, radians, atan2, degrees, pow, sqrt
-from tools.utils import log, log_data, unix_epoch, iso8601, uart2_sema
+from tools.utils import log, log_data, unix_epoch, iso8601
 from device import DEVICE
 
 class METEO(DEVICE):
@@ -15,20 +15,18 @@ class METEO(DEVICE):
         self.sreader = asyncio.StreamReader(self.uart)
         self.swriter = asyncio.StreamWriter(self.uart, {})
         self.data = b''
-        self.uart_sema = uart2_sema
         self.warmup_interval = self.config['Warmup_Interval']
         self.data_length = self.config['Data_Length']
         self.string_label = self.config['String_Label']
         self.records = 0
 
     async def startup(self, **kwargs):
-        async with self.uart_sema:
-            self.on()
-            self.init_uart()
-            if await self.is_ready():
-                log(self.__qualname__, 'successfully initialised')
-            self.uart.deinit()
-            self.off()
+        self.on()
+        self.init_uart()
+        if await self.is_ready():
+            log(self.__qualname__, 'successfully initialised')
+        self.uart.deinit()
+        self.off()
 
     def decode(self, data):
         try:
@@ -208,7 +206,7 @@ class METEO(DEVICE):
     async def log(self):
         self.ts = time.time()
         await log_data(
-            '{},{},{},{},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:0d},{:.1f}'.format(
+            '{},{},{},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:0d},{:.1f}'.format(
                 self.string_label,
                 str(unix_epoch(self.ts)),
                 iso8601(self.ts),  # yyyy-mm-ddThh:mm:ssZ (controller)
@@ -227,30 +225,29 @@ class METEO(DEVICE):
             )
 
     async def main(self):
-        async with self.uart_sema:
-            self.on()
-            self.init_uart()
-            await asyncio.sleep(self.warmup_interval)
-            pyb.LED(3).on()
-            self.data = b''
-            t0 = time.time()
-            while not self._timeout(t0, self.timeout):
-                try:
-                    line = await asyncio.wait_for(self.sreader.readline(), self.timeout)
-                except asyncio.TimeoutError:
-                    log(self.__qualname__, 'no data received', type='e')
-                    break
-                if not self.decode(line):
-                    await asyncio.sleep(0)
-                    continue
-                if len(line) == self.data_length:
-                    self.data += line
-                if len(self.data) == self.samples * self.data_length:
-                    break
+        self.on()
+        self.init_uart()
+        await asyncio.sleep(self.warmup_interval)
+        pyb.LED(3).on()
+        self.data = b''
+        t0 = time.time()
+        while not self._timeout(t0, self.timeout):
+            try:
+                line = await asyncio.wait_for(self.sreader.readline(), self.timeout)
+            except asyncio.TimeoutError:
+                log(self.__qualname__, 'no data received', type='e')
+                break
+            if not self.decode(line):
                 await asyncio.sleep(0)
-            self.records = len(self.data) // self.data_length
-            if self.data:
-                await self.log()
-            pyb.LED(3).off()
-            self.uart.deinit()
-            self.off()
+                continue
+            if len(line) == self.data_length:
+                self.data += line
+            if len(self.data) == self.samples * self.data_length:
+                break
+            await asyncio.sleep(0)
+        self.records = len(self.data) // self.data_length
+        if self.data:
+            await self.log()
+        pyb.LED(3).off()
+        self.uart.deinit()
+        self.off()

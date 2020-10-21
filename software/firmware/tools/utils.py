@@ -2,19 +2,19 @@
 # MIT license; Copyright (c) 2020 Andrea Corbo
 
 import uasyncio as asyncio
+from primitives.message import Message
+from primitives.semaphore import Semaphore
 import time
 import os
 import json
+import _thread
 import pyb
 from configs import dfl, cfg
-from primitives.message import Message
-from primitives.semaphore import Semaphore
 
 logger = True  # Prints out messages.
 
 f_lock = asyncio.Lock()  # Data file lock.
 alert = Message()  # Sms message.
-uart2_sema = Semaphore(1)  # Gps/Meteo uart semaphore.
 timesync = asyncio.Event()  # Gps fix event.
 scheduling = asyncio.Event()  # Scheduler event.
 disconnect = asyncio.Event()  # Modem event.
@@ -88,6 +88,18 @@ def msg(msg=None):
         print('\n{:#^80}'.format(msg))
 
 def log(*args, **kwargs):
+    #evt = asyncio.Event()  # Event to wait for thread completion.
+    def fwriter():
+        try:
+            with open(dfl.LOG_DIR + '/' + dfl.LOG_FILE, 'a') as f:
+                f.write('{},{},{}\r\n'.format(
+                timestamp,
+                args[0],
+                ' '.join(map(str, args[1:]))))
+        except Exception as err:
+            print(err)
+        #evt.set()
+
     type = 'm'
     if kwargs and 'type' in kwargs:
         type = kwargs['type']
@@ -98,14 +110,10 @@ def log(*args, **kwargs):
         ' '.join(map(str, args[1:]))))
     if cfg.LOG_TO_FILE:
         if type in cfg.LOG_LEVEL:
-            try:
-                with open(dfl.LOG_DIR + '/' + dfl.LOG_FILE, 'a') as f:  # TODO: start new file, zip old file, remove oldest
-                    f.write('{},{},{}\r\n'.format(
-                    timestamp,
-                    args[0],
-                    ' '.join(map(str, args[1:]))))
-            except Exception as err:
-                print(err)
+            _thread.start_new_thread(fwriter,())
+            #await asyncio.sleep_ms(10)
+            #await evt.wait()
+            #evt.clear()
 
 # Set alert msg, caught by alerter.
 def set_alert(text):
@@ -113,55 +121,41 @@ def set_alert(text):
     alert.set(text)
 
 def dailyfile():
-    return '{:04d}{:02d}{:02d}'.format(time.localtime()[0], time.localtime()[1], time.localtime()[2])
+    # YYYYMMDD
+    return '{:04d}{:02d}{:02d}'.format(
+        time.localtime()[0],
+        time.localtime()[1],
+        time.localtime()[2]
+        )
 
 async def log_data(data):
-    import _thread
     global f_lock
-    evt = asyncio.Event()  # Scheduler event.
-    def writer():
+    evt = asyncio.Event()  # Event to wait for thread completion.
+    def fwriter():
         try:
-            with open(dfl.DATA_DIR + '/' + dailyfile(), 'a') as fa:
-                fa.write('{}\r\n'.format(data))
+            with open(dfl.DATA_DIR + '/' + dailyfile(), 'a') as f:
+                f.write('{}\r\n'.format(data))
                 log(data)
         except Exception as err:
             log(type(err).__name__, err, type='e')
         evt.set()
 
     async with f_lock:
-        _thread.start_new_thread(writer, ())
+        _thread.start_new_thread(fwriter, ())
         await asyncio.sleep_ms(10)
         await evt.wait()
         evt.clear()
 
 def files_to_send():
-
-    def too_old(file):
-        filename = file.split('/')[-1]
-        path = file.replace('/' + file.split('/')[-1], '')
-        if time.mktime(time.localtime()) - time.mktime([int(filename[0:4]),int(filename[4:6]),int(filename[6:8]),0,0,0,0,0]) > cfg.BUF_DAYS * 86400:
-            os.rename(file, path + '/' + dfl.SENT_FILE_PFX + filename)
-            if path + '/' + dfl.TMP_FILE_PFX + filename in os.listdir(path):
-                os.remove(path + '/' + dfl.TMP_FILE_PFX + filename)
-            return True
-        return False
-
-    for file in sorted(os.listdir(dfl.DATA_DIR)):
-        if file[0] not in (dfl.TMP_FILE_PFX, dfl.SENT_FILE_PFX):  # Checks for unsent files.
-            try:
-                int(file)
-            except:
-                os.remove(dfl.DATA_DIR + '/' + file)  # Deletes all except data files.
-                continue
-            if not too_old(dfl.DATA_DIR + '/' + file):
-                # Checks if new data has been added to the file since the last transmission.
-                pointer = 0
-                try:
-                    with open(dfl.DATA_DIR + '/' + dfl.TMP_FILE_PFX + file, 'r') as tmp:
-                        pointer = int(tmp.read())
-                except:
-                    pass  # Tmp file does not exist.
-                if os.stat(dfl.DATA_DIR + '/' + file)[6] > pointer:
-                    yield dfl.DATA_DIR + '/' + file
-    if any(file[0] not in (dfl.TMP_FILE_PFX, dfl.SENT_FILE_PFX) for file in os.listdir(dfl.DATA_DIR)):
-            yield '\x00'  # Needed to end ymodem transfer.
+    for f in sorted(os.listdir(dfl.DATA_DIR)):
+        try:
+            int(f)  # Names of unsent datafiles are integer YYYYMMDD.
+        except ValueError:
+            continue
+        if (time.mktime(time.localtime())
+            - time.mktime([int(f[0:4]),int(f[4:6]),int(f[6:8]),0,0,0,0,0])
+            < cfg.BUF_DAYS * 86400):
+            yield dfl.DATA_DIR + '/' + f  # Skips files older than BUF_DAYS.
+    if dfl.LOG_FILE in os.listdir(dfl.LOG_DIR):
+        yield dfl.LOG_DIR + '/' + dfl.LOG_FILE  # Sends last log file.
+    yield '\x00'  # Null file is needed to end ymodem transmission.

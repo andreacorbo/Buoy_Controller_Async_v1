@@ -32,7 +32,7 @@ class MODEM(DEVICE, YMODEM):
         self.sms_ats = self.config['Modem']['Sms_Ats']
         self.sms_to = self.config['Modem']['Sms_To']
         self.sms_timeout = self.config['Modem']['Sms_Timeout']
-        YMODEM.__init__(self, self.agetc, self.aputc, dfl.TMP_FILE_PFX, dfl.SENT_FILE_PFX, dfl.BKP_FILE_PFX, mode='Ymodem1k')
+        YMODEM.__init__(self, self.agetc, self.aputc)
 
     async def startup(self, **kwargs):
         self.on()
@@ -97,12 +97,18 @@ class MODEM(DEVICE, YMODEM):
         log(self.__qualname__, 'successfully initialised')
 
     # Receives n-bytes or a line.
-    async def agetc(self, size, timeout=1):
+    '''async def agetc(self, size, timeout=1):
         try:
             if size:
                 return await asyncio.wait_for(self.sreader.read(size), timeout)
             else:
                 return await asyncio.wait_for(self.sreader.readline(), timeout)
+        except asyncio.TimeoutError:
+            return'''
+
+    async def agetc(self, size, timeout=1):
+        try:
+            return await asyncio.wait_for(self.sreader.readexactly(size), timeout)
         except asyncio.TimeoutError:
             return
 
@@ -127,7 +133,7 @@ class MODEM(DEVICE, YMODEM):
         log(self.__qualname__, 'call failed')
         return False
 
-    # Ends up a call.
+    # Jamgs up a call.
     async def hangup(self):
         self.reply_timeout = self.at_timeout
         log(self.__qualname__, 'hangup...')
@@ -140,20 +146,53 @@ class MODEM(DEVICE, YMODEM):
             return False
         return True
 
+    '''# Sends ans receives data.
+    async def datacall(self):
+        ca = 0  # Attempts counter.
+        for _ in range(self.call_attempt):
+            ca += 1
+            if await self.call():
+                await asyncio.sleep(self.ymodem_delay)
+                if await self.asend(files_to_send()):
+                    break
+                if ca < self.call_attempt:
+                    await self.hangup()
+            await asyncio.sleep(self.at_delay)
+        await asyncio.sleep(2)
+        await self.arecv()  # TODO
+        await asyncio.sleep(self.keep_alive)  # Awaits user interaction.
+        self.off()  # Restarts device.
+        await asyncio.sleep(2)
+        self.on()'''
+
+    # Tells to remote who it is.
+    async def preamble(self):
+        await asyncio.sleep(1)  # Safely waits for remote getting ready.
+        if await self.aputc(cfg.HOSTNAME.lower()):
+            verbose(cfg.HOSTNAME.lower() +' -->')
+            ec = 0
+            while ec < 30:
+                if await self.sreader.readexactly(1) == b'\x06':  # ACK
+                    verbose('<-- ACK')
+                    return True
+                ec += 1
+        return False
+
     # Sends ans receives data.
     async def datacall(self):
-        if files_to_send():
-            for _ in range(self.call_attempt):
-                if await self.call():
-                    await asyncio.sleep(self.ymodem_delay)
-                    if await self.send(files_to_send()):
-                        break
-                    await self.hangup()
+        ca = 0  # Attempts counter.
+        for _ in range(self.call_attempt):
+            ca += 1
+            if await self.call():
+                if (await self.preamble()  # Introduces itself.
+                    and await self.asend(files_to_send())  # Puts files.
+                    and await self.arecv()  # Gets files.
+                    or ca == self.call_attempt):
+                    await asyncio.sleep(self.keep_alive)  # Awaits user interaction.
+                    break
+                await self.hangup()
+            else:
                 await asyncio.sleep(self.at_delay)
-        else:
-            log(self.__qualname__, 'nothing to send')
-        #await self.recv(10)  # TODO
-        await asyncio.sleep(self.keep_alive)  # Awaits user interaction.
         self.off()  # Restarts device.
         await asyncio.sleep(2)
         self.on()
