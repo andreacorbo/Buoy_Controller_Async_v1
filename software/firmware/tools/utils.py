@@ -18,6 +18,7 @@ alert = Message()  # Sms message.
 timesync = asyncio.Event()  # Gps fix event.
 scheduling = asyncio.Event()  # Scheduler event.
 disconnect = asyncio.Event()  # Modem event.
+disconnect.set()
 
 def welcome_msg():
     print(
