@@ -31,7 +31,7 @@ async def cleaner():
 # Listens on uart / usb.
 async def listner():
     global devs
-    msg = Message()
+    m = Message()
     uart = pyb.UART(3,9600)
     p = select.poll()  # Creates a poll object to listen to.
     p.register(uart, select.POLLIN)
@@ -50,23 +50,23 @@ async def listner():
             if byte == dfl.ESC_CHAR.encode() and stream[0] == uart and not session.logging:
                 i += 1
                 if i > 2:
-                    asyncio.create_task(session.login(msg,uart))
+                    asyncio.create_task(session.login(m,uart))
                     session.logging = True
             elif byte == b'\x1b' and (stream[0] == uart and session.loggedin or stream[0] != uart) and not menu.interactive:
-                asyncio.create_task(menu.main(msg,uart,devs))
-                msg.set(byte)  # Passes ESC to menu.
+                asyncio.create_task(menu.main(m,uart,devs))
+                m.set(byte)  # Passes ESC to menu.
                 menu.interactive = True
             else:
-                msg.set(byte)
+                m.set(byte)
                 i=0
             await asyncio.sleep(0)
         await asyncio.sleep(0)
 
 # Sends an sms as soon is generated.
-async def alerter():
-    await alert
-    await modem.sms(alert.value())
-    alert.clear()
+async def alerter(txt):
+    await txt
+    await modem.sms(txt.value())
+    txt.clear()
 
 # Launches devs tasks.
 async def launcher(obj,tasks):
@@ -136,12 +136,11 @@ async def main():
 ############################ Program starts here ###############################
 log(dfl.RESET_CAUSE[machine.reset_cause()], type='e')
 welcome_msg()
-time.sleep(5)
 asyncio.create_task(blink(4, 1, 2000, stop_evt=timesync))  # Blue, no gps fix.
 asyncio.create_task(blink(3, 100, 1000, cancel_evt=scheduling))  # Yellow, initialisation.
 asyncio.create_task(blink(2, 1, 2000, start_evt=timesync))  # Green, operating.
-asyncio.create_task(listner())
-asyncio.create_task(alerter())
+#asyncio.create_task(listner())
+asyncio.create_task(alerter(alert))
 asyncio.create_task(cleaner())
 
 try:

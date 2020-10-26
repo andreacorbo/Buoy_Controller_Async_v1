@@ -63,7 +63,11 @@ class MODEM(DEVICE, YMODEM):
         await self.swriter.awrite(cmd)
         while await self.reply():
             verbose(self.data)
-            if self.data.startswith('OK') or self.data.startswith('ERROR') or self.data.startswith('NO CARRIER') or self.data.startswith('CONNECT'):
+            if (self.data.startswith(b'OK')
+                or self.data.startswith(b'ERROR')
+                or self.data.startswith(b'NO CARRIER')
+                or self.data.startswith(b'CONNECT')
+                ):
                 return True
             await asyncio.sleep(0)
         return False
@@ -74,7 +78,7 @@ class MODEM(DEVICE, YMODEM):
         t0 = time.time()
         while time.time() - t0 < self.init_timeout:
             if await self.cmd('AT\r'):
-                if self.data.startswith('OK'):
+                if self.data.startswith(b'OK'):
                     return True
             await asyncio.sleep(0)
         log(self.__qualname__, 'not ready')
@@ -86,9 +90,9 @@ class MODEM(DEVICE, YMODEM):
         for at in self.init_ats:
             while True:
                 if await self.cmd(at):
-                    if self.data.startswith('OK'):
+                    if self.data.startswith(b'OK'):
                         break
-                    elif self.data.startswith('ERROR'):
+                    elif self.data.startswith(b'ERROR'):
                         await asyncio.sleep(self.at_delay)
                         continue
                 log(self.__qualname__, 'initialisation failed')
@@ -116,23 +120,20 @@ class MODEM(DEVICE, YMODEM):
         log(self.__qualname__, 'calling...')
         for at in self.call_ats:
             if await self.cmd(at):
-                if self.data.startswith('CONNECT'):
-                    try:
-                        await asyncio.wait_for(self.sreader.read(1), 10)  # Clears last byte.
-                        return True
-                    except asyncio.TimeoutError:
-                        pass
+                if self.data.startswith(b'CONNECT'):
+                    #await self.sreader.read(1)  # Clears last byte.
+                    return True
             await asyncio.sleep(self.at_delay)
         log(self.__qualname__, 'call failed')
         return False
 
-    # Jamgs up a call.
+    # hangs a call.
     async def hangup(self):
         self.reply_timeout = self.at_timeout
         log(self.__qualname__, 'hangup...')
         for at in self.hangup_ats:
             if await self.cmd(at):
-                if self.data.startswith('OK'):
+                if self.data.startswith(b'OK'):
                     await asyncio.sleep(self.at_delay)
                     continue
             log(self.__qualname__, 'hangup failed')
@@ -140,79 +141,89 @@ class MODEM(DEVICE, YMODEM):
         return True
 
     # Tells to remote who it is.
-    async def preamble(self):
-        await asyncio.sleep(1)  # Safely waits for remote getting ready.
-        if await self.aputc(cfg.HOSTNAME.lower()):
-            verbose(cfg.HOSTNAME.lower() +' -->')
-            res = await asyncio.wait_for(self.sreader.readexactly(1), 10)
-            if res == b'\x06':  # ACK
-                verbose('<-- ACK')
-                return True
+    async def preamble(self, retry=3, timeout=10):
+        await asyncio.sleep(2)  # Safely waits for remote getting ready.
+        ec = 0
+        while ec < retry:
+            if await self.aputc(cfg.HOSTNAME.lower()):
+                verbose(cfg.HOSTNAME.lower() +' -->')
+                try:
+                    res = await asyncio.wait_for(self.sreader.readexactly(1), timeout)
+                    if res == b'\x06':  # ACK
+                        verbose('<-- ACK')
+                        return True
+                except asyncio.TimeoutError:
+                    ec += 1
         return False
 
     # Sends and receives data.
     async def datacall(self):
-        ca = 0  # Attempts counter.
-        for _ in range(self.call_attempt):
-            ca += 1
-            if await self.call():
-                if (await self.preamble()  # Introduces itself.
-                    and await self.asend(files_to_send())  # Puts files.
-                    #and await self.arecv()  # Gets files.
-                    or ca == self.call_attempt):
-                    await asyncio.sleep(self.keep_alive)  # Awaits user interaction.
-                    break
-                await self.hangup()
-            else:
-                await asyncio.sleep(self.at_delay)
-        self.off()  # Restarts device.
-        await asyncio.sleep(2)
-        self.on()
-
-    # Sends an sms.
-    async def sms(self, text):
-        self.reply_timeout = self.at_timeout
-        log(self.__qualname__,'sending sms...')
-        for at in self.sms_ats:
-            if not await self.cmd(at):
-                log(self.__qualname__,'sms failed', at)
-                return False
-            await asyncio.sleep(self.at_delay)
-        await self.swriter.awrite(self.sms_to)
-        try:
-            self.data = await asyncio.wait_for(self.sreader.readline(), self.reply_timeout)
-        except asyncio.TimeoutError:
-            log(self.__qualname__,'sms failed', self.sms_to)
-            return False
-        if self.data.startswith(self.sms_to):
-            verbose(self.data)
-            try:
-                self.data = await asyncio.wait_for(self.sreader.read(2), self.reply_timeout)
-            except asyncio.TimeoutError:
-                log(self.__qualname__,'sms failed')
-                return False
-            if self.data.startswith('>'):
-                verbose(self.data)
-                await self.swriter.awrite(text+'\r')
-                try:
-                    self.data = await asyncio.wait_for(self.sreader.readline(), 60)
-                except asyncio.TimeoutError:
-                    log(self.__qualname__,'sms failed')
-                    return False
-                if self.data.startswith(text):
-                    verbose(self.data)
-                    if await self.cmd('\x1a'):
-                        return True
-        log(self.__qualname__,'sms failed')
-        return False
-
-    async def main(self, task='datacall'):
         async with self.semaphore:
             self.disconnect.clear()
             self.init_uart()
-            await asyncio.sleep(1)
+            ca = 0  # Attempts counter.
+            for _ in range(self.call_attempt):
+                ca += 1
+                if await self.call():
+                    if (await self.preamble(self.call_attempt, self.at_timeout)  # Introduces itself.
+                        and await self.asend(files_to_send())  # Puts files.
+                        #and await self.arecv()  # Gets files.
+                        or ca == self.call_attempt):
+                        await asyncio.sleep(self.keep_alive)  # Awaits user interaction.
+                        break
+                    await self.hangup()
+                else:
+                    await asyncio.sleep(self.at_delay)
+            self.off()  # Restarts device.
+            await asyncio.sleep(2)
+            self.on()
+            self.disconnect.set()
+
+    # Sends an sms.
+    async def sms(self, text):
+        async with self.semaphore:
+            self.disconnect.clear()
+            self.reply_timeout = self.at_timeout
+            log(self.__qualname__,'sending sms...')
+            for at in self.sms_ats:
+                if not await self.cmd(at):
+                    log(self.__qualname__,'sms failed', at)
+                    self.disconnect.set()
+                    return False
+                await asyncio.sleep(self.at_delay)
+            await self.swriter.awrite(self.sms_to)
+            try:
+                self.data = await asyncio.wait_for(self.sreader.readline(), self.reply_timeout)
+            except asyncio.TimeoutError:
+                log(self.__qualname__,'sms failed', self.sms_to)
+                self.disconnect.set()
+                return False
+            if self.data.startswith(self.sms_to):
+                verbose(self.data)
+                try:
+                    self.data = await asyncio.wait_for(self.sreader.read(2), self.reply_timeout)
+                except asyncio.TimeoutError:
+                    log(self.__qualname__,'sms failed')
+                    self.disconnect.set()
+                    return False
+                if self.data.startswith(b'>'):
+                    verbose(self.data)
+                    await self.swriter.awrite(text+'\r\n')
+                    try:
+                        self.data = await asyncio.wait_for(self.sreader.readline(), 60)
+                    except asyncio.TimeoutError:
+                        log(self.__qualname__,'sms failed')
+                        self.disconnect.set()
+                        return False
+                    if self.data.startswith(text):
+                        verbose(self.data)
+                        if await self.cmd('\x1a'):
+                            self.disconnect.set()
+                            return True
+            log(self.__qualname__,'sms failed')
+            self.disconnect.set()
+            return False
+
+    async def main(self, task='datacall'):
             if task == 'datacall':
                 await self.datacall()
-            elif task == 'sms':
-                await self.sms()
-            self.disconnect.set()

@@ -14,8 +14,8 @@
 			"Write_Buf_Len":128,
 			"Read_Char_Attempt":10
 		},
-		"Warmup_Interval":300,
-		"Samples":8,
+		"Warmup_Interval":180,
+		"Samples":4,
 		"Sample_Rate":4
 	}
 }

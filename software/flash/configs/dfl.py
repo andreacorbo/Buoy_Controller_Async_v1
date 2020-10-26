@@ -15,8 +15,7 @@ DEVS = (
     None,
     None,
     None,
-    "dev_gps.GPS",
-    #None,
+    None,
     "dev_modem.MODEM",
     "dev_board.SYSMON"
     )  # Ordered as bob ports
@@ -26,7 +25,6 @@ UARTS = (
     None,
     6,
     1,
-    #2,
     3
     )    # Ordered as bob ports.
 CTRL_PINS = (
@@ -34,8 +32,8 @@ CTRL_PINS = (
     "Y6",
     "Y4",
     "Y3",
-    "Y7",
     #"X11",
+    "Y7",
     "Y5"
     )    # Ordered as bob ports.
 WD_TIMEOUT = 30000  # 1000ms < watchdog timer timeout < 32000ms

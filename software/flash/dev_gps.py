@@ -5,7 +5,7 @@ import uasyncio as asyncio
 import time
 import pyb
 from math import sin, cos, sqrt, atan2, radians
-from tools.utils import log, log_data, timesync, set_alert
+from tools.utils import log, log_data, timesync, set_alert, verbose
 from configs import cfg
 from device import DEVICE
 

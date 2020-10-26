@@ -73,8 +73,11 @@ class CTD(DEVICE):
         await self.swriter.awrite('SET ' + cmd + ENTER)
         if await self.reply():
             if self.data.startswith(cmd,4):  # Ignores 'SET '.
-                await self.sreader.read(1)  # Flushes '>'.
-                return True
+                try:
+                    await asyncio.wait_for(self.sreader.read(1), 10)  # Flushes '>'.
+                    return True
+                except asyncio.TimeoutError:
+                    pass
         return False
 
     # Display commands.
@@ -84,8 +87,11 @@ class CTD(DEVICE):
             if self.data.startswith(cmd,4):  # Ignores 'SET '.
                 if await self.reply():
                     self.data = self.data[:-2]  # Removes '\r\n'.
-                    await self.sreader.read(1)  # Flushes '>'.
-                    return True
+                    try:
+                        await asyncio.wait_for(self.sreader.read(1), 10)  # Flushes '>'.
+                        return True
+                    except asyncio.TimeoutError:
+                        pass
         return False
 
     # Captures commands replies.
@@ -172,8 +178,11 @@ class CTD(DEVICE):
         if await self.reply():
             if self.data.startswith(CMD):
                 if await self.reply():
-                    await self.sreader.read(1)  # Flushes '>'.
-                    return True
+                    try:
+                        await asyncio.wait_for(self.sreader.read(1), 10)  # Flushes '>'.
+                        return True
+                    except asyncio.TimeoutError:
+                        pass
         return False
 
     async def log(self):
