@@ -141,9 +141,9 @@ class MODEM(DEVICE, YMODEM):
         return True
 
     # Tells to remote who it is.
-    async def preamble(self, retry=3, timeout=10):
-        await asyncio.sleep(2)  # Safely waits for remote getting ready.
-        ec = 0
+    async def preamble(self, retry=10, timeout=10):
+        #await asyncio.sleep(2)  # Safely waits for remote getting ready.
+        ec = 0  # Error counter.
         while ec < retry:
             if await self.aputc(cfg.HOSTNAME.lower()):
                 verbose(cfg.HOSTNAME.lower() +' -->')
@@ -159,25 +159,25 @@ class MODEM(DEVICE, YMODEM):
     # Sends and receives data.
     async def datacall(self):
         async with self.semaphore:
-            self.disconnect.clear()
+            self.disconnect.clear()  # Locks user interaction.
             self.init_uart()
             ca = 0  # Attempts counter.
             for _ in range(self.call_attempt):
                 ca += 1
                 if await self.call():
-                    if (await self.preamble(self.call_attempt, self.at_timeout)  # Introduces itself.
-                        and await self.asend(files_to_send())  # Puts files.
-                        #and await self.arecv()  # Gets files.
-                        or ca == self.call_attempt):
-                        await asyncio.sleep(self.keep_alive)  # Awaits user interaction.
-                        break
+                    if await self.preamble(self.call_attempt, self.at_timeout):  # Introduces itself.
+                        if await self.asend(files_to_send()):  # Puts files.
+	                        if await self.arecv():  # Gets files.
+								self.disconnect.set()  # Restores user interaction.
+                        		await asyncio.sleep(self.keep_alive)  # Awaits user interaction.
+                        		break
                     await self.hangup()
-                else:
+                if ca < self.call_attempt:
                     await asyncio.sleep(self.at_delay)
             self.off()  # Restarts device.
             await asyncio.sleep(2)
             self.on()
-            self.disconnect.set()
+            self.disconnect.set()  # Restores user interaction.
 
     # Sends an sms.
     async def sms(self, text):

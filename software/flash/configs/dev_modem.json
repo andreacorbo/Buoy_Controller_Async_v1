@@ -16,7 +16,7 @@
 		"Modem":{
 			"At_Timeout":10,
 			"At_Delay":2,
-			"Call_Attempt":3,
+			"Call_Attempt":10,
 			"Call_Delay":5,
 			"Call_Timeout":30,
 			"Init_Timeout":120,
