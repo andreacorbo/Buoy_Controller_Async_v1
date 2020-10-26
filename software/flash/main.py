@@ -29,7 +29,7 @@ async def cleaner():
         await asyncio.sleep_ms(1000)
 
 # Listens on uart / usb.
-async def listner():
+'''async def listner():
     global devs
     m = Message()
     uart = pyb.UART(3,9600)
@@ -60,7 +60,44 @@ async def listner():
                 m.set(byte)
                 i=0
             await asyncio.sleep(0)
-        await asyncio.sleep(0)
+        await asyncio.sleep(0)'''
+
+# Listens on uart / usb.
+async def listner():
+    global devs
+    m = Message()
+    async def poller(stream):
+        sreader = asyncio.StreamReader(stream)
+        i=0
+        while True:
+            await scheduling.wait() and await disconnect.wait()
+            try:
+                byte = await asyncio.wait_for(sreader.read(1),1)
+                if byte:
+                    try:
+                        byte.decode('utf-8')
+                    except UnicodeError:
+                        await asyncio.sleep(0)
+                        continue
+                    if byte == dfl.ESC_CHAR.encode() and stream.__class__.__name__ == 'UART' and not session.logging:
+                        i += 1
+                        if i > 2:
+                            asyncio.create_task(session.login(m,stream))
+                            session.logging = True
+                    elif byte == b'\x1b' and (stream.__class__.__name__ == 'UART' and session.loggedin or stream.__class__.__name__ == 'USB_VCP') and not menu.interactive:
+                        asyncio.create_task(menu.main(m,stream,devs))
+                        m.set(byte)  # Passes ESC to menu.
+                        menu.interactive = True
+                    else:
+                        m.set(byte)
+                        i=0
+            except asyncio.TimeoutError:
+                pass
+            asyncio.sleep(0)
+
+    asyncio.create_task(poller(pyb.UART(3,9600)))
+    asyncio.create_task(poller(pyb.USB_VCP()))
+
 
 # Sends an sms as soon is generated.
 async def alerter(txt):
@@ -139,7 +176,7 @@ welcome_msg()
 asyncio.create_task(blink(4, 1, 2000, stop_evt=timesync))  # Blue, no gps fix.
 asyncio.create_task(blink(3, 100, 1000, cancel_evt=scheduling))  # Yellow, initialisation.
 asyncio.create_task(blink(2, 1, 2000, start_evt=timesync))  # Green, operating.
-#asyncio.create_task(listner())
+asyncio.create_task(listner())
 asyncio.create_task(alerter(alert))
 asyncio.create_task(cleaner())
 
