@@ -16,6 +16,7 @@ from tools.utils import iso8601, scheduling, alert, log, welcome_msg, blink, msg
 from configs import dfl, cfg
 
 devs = []
+uart = pyb.UART(3,9600)
 
 async def hearthbeat():
     await scheduling.wait()
@@ -30,42 +31,42 @@ async def cleaner():
 
 # Listens on uart / usb.
 async def listner():
-	global devs
-	m = Message()
-	async def poller(stream):
-		sreader = asyncio.StreamReader(stream)
-		i=0
-		while True:
-			await scheduling.wait() and await disconnect.wait()
-			b = await sreader.read(1)
-			if b:
-				try:
-					b.decode('utf-8')
-				except UnicodeError:
-					await asyncio.sleep(0)
-					continue
-				if (b == dfl.ESC_CHAR.encode()
-					and stream.__class__.__name__ == 'UART'
-					and not session.logging):
-					i += 1
-					if i > 2:
-						asyncio.create_task(session.login(m,stream))
-						session.logging = True
-					elif (b == b'\x1b'
-						and (stream.__class__.__name__ == 'UART'
-							and session.loggedin
-							or stream.__class__.__name__ == 'USB_VCP')
-						and not menu.interactive:
-						asyncio.create_task(menu.main(m,stream,devs))
-						m.set(b)  # Passes ESC to menu.
-						menu.interactive = True
-					else:
-						m.set(b)
-						i=0
-			asyncio.sleep_ms(100)
+    global devs
+    m = Message()
+    # Polls a stream.
+    async def poller(stream):
+        sreader = asyncio.StreamReader(stream)
+        i=0
+        while True:
+            await scheduling.wait() and await disconnect.wait()
+            try:
+                c = await asyncio.wait_for(sreader.read(1),1)
+                if c:
+                    try:
+                        c.decode('utf-8')
+                    except UnicodeError:
+                        await asyncio.sleep_ms(100)
+                        continue
+                    if c == dfl.ESC_CHAR.encode() and stream.__class__.__name__ == 'UART' and not session.logging:
+                        i += 1
+                        if i > 2:
+                            asyncio.create_task(session.login(m,stream))
+                            session.logging = True
+                    elif c == b'\x1b' and (stream.__class__.__name__ == 'UART' and session.loggedin or stream.__class__.__name__ == 'USB_VCP') and not menu.interactive:
+                        asyncio.create_task(menu.main(m,stream,devs))
+                        m.set(c)  # Passes ESC to menu.
+                        menu.interactive = True
+                    else:
+                        m.set(c)
+                        i=0
+            except asyncio.TimeoutError:
+                pass
+            await asyncio.sleep_ms(100)  # Slows down polling.
 
-	asyncio.create_task(poller(pyb.UART(3,9600)))  # Polls the modem uart.
-	asyncio.create_task(poller(pyb.USB_VCP()))  # Polls the usb vcp.
+    if pyb.USB_VCP().isconnected():
+        asyncio.create_task(poller(pyb.USB_VCP()))
+    else:
+        asyncio.create_task(poller(uart))
 
 # Sends an sms as soon is generated.
 async def alerter(txt):
@@ -121,6 +122,7 @@ async def main():
     # Initialises the scheduler.
     msg(' START SCHEDULER ')
     scheduling.set()
+    disconnect.set()
     for c in cfg.CRON:
         asyncio.create_task(schedule(
             launcher,
@@ -135,10 +137,17 @@ async def main():
             times=c[-1]
             ))
     #asyncio.create_task(schedule(hearthbeat, hrs=None, mins=None, secs=range(0,60,2)))
+
     while True:
         await asyncio.sleep(60)  # Keeps scheduler running forever.
 
 ############################ Program starts here ###############################
+#if not pyb.USB_VCP().isconnected():  # Forward repl to main uart at startup.
+    #uart = pyb.UART(3,9600)
+    #uart.init()
+#pyb.repl_uart(uart)  # Better to keep enabled during test period,
+                                     # in order to be able to connect and
+                                     # restart the board at any time.
 log(dfl.RESET_CAUSE[machine.reset_cause()], type='e')
 welcome_msg()
 asyncio.create_task(blink(4, 1, 2000, stop_evt=timesync))  # Blue, no gps fix.

@@ -1,5 +1,5 @@
 {
-	"GPS":{
+    "GPS":{
 		"Device":1,
 		"Async":1,
 		"Uart":{

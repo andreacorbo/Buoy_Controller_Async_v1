@@ -2,6 +2,7 @@
 # MIT license; Copyright (c) 2020 Andrea Corbo
 
 import uasyncio as asyncio
+from primitives.message import Message
 import os
 import select
 import pyb
@@ -22,8 +23,10 @@ async def main(msg,uart,objs):
     device = False
     dev = None
     logger = False  # Stops log stream.
+    fw = Message()  # Forwards main uart to device.
     while True:
         await msg
+        fw.set(msg.value())
         if not board:
             if not devices:
                 if not device:
@@ -31,14 +34,13 @@ async def main(msg,uart,objs):
                         board = True
                         await board_menu()
                 else:  # device
-                    if msg.value() == ESC:
-                        await device_menu(dev)
-                    elif  msg.value() == b'0':
+                    if  msg.value() == b'0':
                         dev.toggle()
                         await device_menu(dev)
-                    elif  msg.value() == b'1':
-                        await pass_through(dev,uart)
-                        await device_menu(dev)
+                    elif msg.value() == b'1':
+                        fw.clear()  # Clears last byte.
+                        asyncio.create_task(pass_through(dev,uart,fw))
+                        #await device_menu(dev)
                     elif  msg.value() == b'2':
                         pass
                     elif  msg.value() == b'3':
@@ -48,6 +50,8 @@ async def main(msg,uart,objs):
                         device = False
                         devices = True
                         await devices_menu(objs)
+                    elif msg.value() == ESC:
+                        await device_menu(dev)
             else:  # devices
                 if msg.value() == ESC:
                     await devices_menu(objs)
@@ -61,7 +65,7 @@ async def main(msg,uart,objs):
                     try:
                         dev = objs[int(msg.value())]
                         await device_menu(dev)
-                    except IndexError:
+                    except:
                         await devices_menu(objs)
         else:  # board
             if msg.value() == ESC:
@@ -134,47 +138,61 @@ async def get_config(obj):
     _.append("\r")
     print("\r\n".join(_))
 
-async def pass_through(obj,uart):
-    scheduling.clear()
-    print('[P] PAUSE/RESUME\r\n[BACKSPACE] BACK\r\n')
-    running = asyncio.Event()  # manages scheduler.
-    running.set()  # enable scheduler
-    obj.init_uart()
-    tx = bytearray()
-    _poll = select.poll()  # Creates a poll object to listen to.
-    _poll.register(uart, select.POLLIN)
-    _poll.register(pyb.USB_VCP(), select.POLLIN)
-    _poll.register(obj.uart, select.POLLIN)
-    while True:
-        poll = _poll.ipoll(0, 0)
-        for stream in poll:
-            byte = stream[0].read(1)
-            try:
-                byte.decode('utf-8')
-            except UnicodeError:
-                continue
-            if stream[0] in [uart,pyb.USB_VCP()]:
-                if byte in BACKSPACE:  # [BACKSPACE] Backs to previous menu.
-                    obj.uart.deinit()
-                    scheduling.set()
-                    return
-                elif byte == SPACE:  # [SPACE] Pauses and resumes.
-                    if running.is_set():
-                        print('[SPACE] PAUSE\RESUME')
-                        running.clear()
-                    else:
-                        running.set()
-                elif byte == RETURN:  # [CR] Forwards cmds to device.
-                    tx.extend(byte)
-                    obj.uart.write(tx)
-                    tx = bytearray()
-                else:
-                    tx.extend(byte)
-                    print(byte.decode('utf-8'), end='')
-            elif running.is_set():
-                 print('{}'.format(byte.decode('utf-8')), end='')
+async def pass_through(device,uart,fw):
+    cancel = asyncio.Event()  # Task cancellation event.
+    device.init_uart()
+    dreader = asyncio.StreamReader(device.uart)
+    dwriter = asyncio.StreamWriter(device.uart,{})
+    mwriter = asyncio.StreamWriter(uart,{})
+
+    async def send(dwriter, fw):
+        b = bytearray()
+        while True:
+            await fw
+            if fw.value() == ESC:
+                cancel.set()
+            else:
+                print(fw.value().decode(),end='')
+                b.append(ord(fw.value()))
+                if fw.value() == b'\r':
+                    await dwriter.awrite(b)
+                    b = bytearray()
+                fw.clear()
             await asyncio.sleep(0)
-        await asyncio.sleep(0)
+
+    async def recv(dreader, mwriter):
+        while True:
+            res = await dreader.readline()
+            if res is not None:
+                await mwriter.awrite(res)
+            await asyncio.sleep(0)
+
+    send_ = asyncio.create_task(send(dwriter, fw))
+    recv_ = asyncio.create_task(recv(dreader, mwriter))
+    await cancel.wait()
+    send_.cancel()
+    recv_.cancel()
+    return
+
+    '''while True:
+        if fw.is_set():
+            print(fw.value())
+            if fw.value() == ESC:
+                return
+            try:
+                await asyncio.wait_for(dwriter.awrite(fw.value()), 1)
+                fw.clear()
+            except asyncio.TimeoutError:
+                await mwriter.awrite('timeout writing to device')
+
+        try:
+            res = await asyncio.wait_for(dreader.readline(),2)
+            if res is not None:
+                await mwriter.awrite(res)
+        except asyncio.TimeoutError:
+            await mwriter.awrite('timeout reading from device')
+            #return
+        await asyncio.sleep(0)'''
 
 async def data_files():
     _ = ["{:#^40}".format(" DATA FILES ")]

@@ -522,50 +522,51 @@ class ADCP(DEVICE):
         def get_flow():
             return 0  # TODO: calc flow for rivers.
 
-        try:
-            record = [
-            self.config['String_Label'],
-            '{}'.format(str(unix_epoch(self.ts))),
-            '{}'.format(iso8601(self.ts)),                                   # yyyy-mm-ddThh:mm:ssZ (controller)
-            '{:2s}/{:2s}/20{:2s}'.format(sample[2], sample[5], sample[4]),  # dd/mm/yyyy
-            '{:2s}:{:2s}'.format(sample[3], sample[0]),                     # hh:mm
-            '{:.2f}'.format(sample[8]),                                     # Battery
-            '{:.2f}'.format(sample[9]),                                     # SoundSpeed
-            '{:.2f}'.format(sample[10]),                                    # Heading
-            '{:.2f}'.format(sample[11]),                                    # Pitch
-            '{:.2f}'.format(sample[12]),                                    # Roll
-            '{:.2f}'.format(sample[13]),                                    # Pressure
-            '{:.2f}'.format(sample[15]),                                    # Temperature
-            '{:.2f}'.format(get_flow()),                                    # Flow
-            '{}'.format(self.usr_cfg[17]),                                  # CoordSystem
-            '{}'.format(self.usr_cfg[4]),                                   # TODO: BlankingDistance
-            '{}'.format(self.usr_cfg[20]),                                  # MeasInterval
-            '{:.2f}'.format(self.usr_cfg[19] * 0.01692620176 / 100),        # BinLength
-            '{}'.format(self.usr_cfg[18]),                                  # NBins
-            '{}'.format(sample[14][0])                                      # TiltSensorMounting
-            ]
+        #try:
+        record = [
+        self.config['String_Label'],
+        '{}'.format(str(unix_epoch(self.ts))),
+        '{}'.format(iso8601(self.ts)),                                   # yyyy-mm-ddThh:mm:ssZ (controller)
+        '{:2s}/{:2s}/20{:2s}'.format(sample[2], sample[5], sample[4]),  # dd/mm/yyyy
+        '{:2s}:{:2s}'.format(sample[3], sample[0]),                     # hh:mm
+        '{:.2f}'.format(sample[8]),                                     # Battery
+        '{:.2f}'.format(sample[9]),                                     # SoundSpeed
+        '{:.2f}'.format(sample[10]),                                    # Heading
+        '{:.2f}'.format(sample[11]),                                    # Pitch
+        '{:.2f}'.format(sample[12]),                                    # Roll
+        '{:.2f}'.format(sample[13]),                                    # Pressure
+        '{:.2f}'.format(sample[15]),                                    # Temperature
+        '{:.2f}'.format(get_flow()),                                    # Flow
+        '{}'.format(self.usr_cfg[17]),                                  # CoordSystem
+        '{}'.format(self.usr_cfg[4]),                                   # TODO: BlankingDistance
+        '{}'.format(self.usr_cfg[20]),                                  # MeasInterval
+        '{:.2f}'.format(self.usr_cfg[19] * 0.01692620176 / 100),        # BinLength
+        '{}'.format(self.usr_cfg[18]),                                  # NBins
+        '{}'.format(sample[14][0])                                      # TiltSensorMounting
+        ]
 
-            j = 16
-            for bin in range(self.usr_cfg[18]):
-                record.append('#{}'.format(bin + 1))                        # (#Cell number)
-                for beam in range(self.usr_cfg[10]):
-                    record.append('{:.3f}'.format(sample[j+beam*self.usr_cfg[18]]))
-                j += 1
-            return record
-        except Exception as err:
-            log(self.__qualname__, 'format_data', type(err).__name__, err)
+        j = 16
+        for bin in range(self.usr_cfg[18]):
+            record.append('#{}'.format(bin + 1))                        # (#Cell number)
+            for beam in range(self.usr_cfg[10]):
+                record.append('{:.3f}'.format(sample[j+beam*self.usr_cfg[18]]))
+            j += 1
+        return record
+        #except Exception as err:
+        #    log(self.__qualname__, 'format_data', type(err).__name__, err)
 
     async def log(self):
         #with open(dfl.DATA_DIR + cfg.RAW_DIR + '/' + dailyfile() + '.prf', 'ab') as raw:
         #    raw.write(self.data)
-        try:
-            await log_data(dfl.DATA_SEPARATOR.join(self.format_data(self.conv_data())))
-        except Exception as err:
-            log(self.__qualname__, 'log', type(err).__name__, err)
+        #try:
+        await log_data(dfl.DATA_SEPARATOR.join(self.format_data(self.conv_data())))
+        #except Exception as err:
+        #    log(self.__qualname__, 'log', type(err).__name__, err)
 
     # Scheduled.
     async def scheduled(self):
         pyb.LED(3).on()
+        await self.parse_cfg()
         try:
             self.data = await asyncio.wait_for(self.sreader.read(1024), self.timeout)
             self.ts = time.time()
@@ -578,7 +579,7 @@ class ADCP(DEVICE):
         self.uart.deinit()
 
     # Continuos polling.
-    async def poll(self):
+    async def continuos(self):
         poll_ = select.poll()  # Creates a poll object to listen to.
         poll_.register(self.uart, select.POLLIN)
         while True:
@@ -598,6 +599,6 @@ class ADCP(DEVICE):
     async def main(self, task='scheduled'):
         self.init_uart()
         if task == 'poll':
-            await self.poll()
+            await self.continuos()
         else:
             await self.scheduled()

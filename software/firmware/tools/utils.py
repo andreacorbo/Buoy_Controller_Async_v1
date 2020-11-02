@@ -18,7 +18,6 @@ alert = Message()  # Sms message.
 timesync = asyncio.Event()  # Gps fix event.
 scheduling = asyncio.Event()  # Scheduler event.
 disconnect = asyncio.Event()  # Modem event.
-disconnect.set()
 
 def welcome_msg():
     print(
@@ -89,7 +88,6 @@ def msg(msg=None):
         print('\n{:#^80}'.format(msg))
 
 def log(*args, **kwargs):
-    #evt = asyncio.Event()  # Event to wait for thread completion.
     def fwriter():
         try:
             with open(dfl.LOG_DIR + '/' + dfl.LOG_FILE, 'a') as f:
@@ -99,7 +97,6 @@ def log(*args, **kwargs):
                 ' '.join(map(str, args[1:]))))
         except Exception as err:
             print(err)
-        #evt.set()
 
     type = 'm'
     if kwargs and 'type' in kwargs:
@@ -112,9 +109,6 @@ def log(*args, **kwargs):
     if cfg.LOG_TO_FILE:
         if type in cfg.LOG_LEVEL:
             _thread.start_new_thread(fwriter,())
-            #await asyncio.sleep_ms(10)
-            #await evt.wait()
-            #evt.clear()
 
 # Set alert msg, caught by alerter.
 def set_alert(text):

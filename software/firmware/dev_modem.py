@@ -1,6 +1,5 @@
 # dev_modem.py
 # MIT license; Copyright (c) 2020 Andrea Corbo
-#"Init_Ats":["ATE1\r","ATI\r","AT+CREG=0\r","AT+CSQ\r","AT+CBST=7,0,1\r","AT+COPS=1,2,22201\r","ATS0=1\r","AT&W\r"],
 import uasyncio as asyncio
 from primitives.semaphore import Semaphore
 import time
@@ -56,7 +55,9 @@ class MODEM(DEVICE, YMODEM):
                 return True
         except asyncio.TimeoutError:
             log(self.__qualname__, 'no answer')
-        return False
+            return False
+        except AssertionError:
+            return False
 
     # Sends ats commands.
     async def cmd(self, cmd):
@@ -64,10 +65,10 @@ class MODEM(DEVICE, YMODEM):
         while await self.reply():
             verbose(self.data)
             if (self.data.startswith(b'OK')
-                or self.data.startswith(b'ERROR')
-                or self.data.startswith(b'NO CARRIER')
-                or self.data.startswith(b'CONNECT')
-                ):
+            or self.data.startswith(b'ERROR')
+            or self.data.startswith(b'NO CARRIER')
+            or self.data.startswith(b'CONNECT')
+            ):
                 return True
             await asyncio.sleep(0)
         return False
@@ -167,10 +168,10 @@ class MODEM(DEVICE, YMODEM):
                 if await self.call():
                     if await self.preamble(self.call_attempt, self.at_timeout):  # Introduces itself.
                         if await self.asend(files_to_send()):  # Puts files.
-	                        if await self.arecv():  # Gets files.
-								self.disconnect.set()  # Restores user interaction.
-                        		await asyncio.sleep(self.keep_alive)  # Awaits user interaction.
-                        		break
+                            await self.arecv()  # Gets files.
+                                #self.disconnect.set()  # Restores user interaction.
+                                #await asyncio.sleep(self.keep_alive)  # Awaits user interaction.
+                            break
                     await self.hangup()
                 if ca < self.call_attempt:
                     await asyncio.sleep(self.at_delay)
@@ -183,7 +184,7 @@ class MODEM(DEVICE, YMODEM):
     async def sms(self, text):
         async with self.semaphore:
             self.disconnect.clear()
-            self.reply_timeout = self.at_timeout
+            self.reply_timeout = self.call_timeout
             log(self.__qualname__,'sending sms...')
             for at in self.sms_ats:
                 if not await self.cmd(at):
