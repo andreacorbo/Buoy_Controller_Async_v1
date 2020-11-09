@@ -38,7 +38,6 @@ class ADCP(DEVICE):
         self.init_uart()
         await asyncio.sleep(1) # Waits for uart getting ready.
         if await self.brk():
-            #await timesync.wait()
             await self.set_clock()
             await self.set_usr_cfg()
             await self.get_cfg()
@@ -62,8 +61,6 @@ class ADCP(DEVICE):
         except asyncio.TimeoutError:
             log(self.__qualname__, 'no answer')
             return False
-        #if self.decode():  TODO: Check if it works.
-        #    return True
         return True
 
     def ack(self):
@@ -139,7 +136,8 @@ class ADCP(DEVICE):
         if await self.brk():
             now = time.localtime()
             await self.swriter.awrite('SC')
-            await self.swriter.awrite(binascii.unhexlify('{:02d}{:02d}{:02d}{:02d}{:02d}{:02d}'.format(now[4], now[5]+1, now[2], now[3], int(str(now[0])[2:]), now[1])))
+            await self.swriter.awrite(
+            binascii.unhexlify('{:02d}{:02d}{:02d}{:02d}{:02d}{:02d}'.format(now[4], now[5]+1, now[2], now[3], int(str(now[0])[2:]), now[1])))
             if await self.reply():
                 if self.ack():
                     log(self.__qualname__, 'instrument clock synchronized {}'.format(await get_clock()))
@@ -163,7 +161,10 @@ class ADCP(DEVICE):
         if await self.brk():
             await self.swriter.awrite('GA')
             if await self.reply():
-                if self.ack() and await self.verify_checksum(self.data[0:48]) and await self.verify_checksum(self.data[48:272]) and await self.verify_checksum(self.data[272:784]):
+                if self.ack()
+                and await self.verify_checksum(self.data[0:48])
+                and await self.verify_checksum(self.data[48:272])
+                and await self.verify_checksum(self.data[272:784]):
                     _thread.start_new_thread(filewriter, ())
                     await asyncio.sleep_ms(10)
                     await self.evt.wait()
@@ -417,7 +418,7 @@ class ADCP(DEVICE):
                 log(self.__qualname__, 'unable to start measurement', type='e')
                 return False
 
-    def conv_data(self):
+    async def conv_data(self):
 
         def get_error(error):
             try:
@@ -477,21 +478,27 @@ class ADCP(DEVICE):
             except Exception as err:
                 log(self.__qualname__, 'get_pressure', type(err).__name__, err)
 
-        def get_cells(data):
+        async def get_cells(data):
             # list(x1, x2, x3... y1, y2, y3... z1, z2, z3..., a11, a12 , a13..., a21, a22, a23..., a31, a32, a33...)
             try:
+                cells = []
                 if self.usr_cfg:
                     nbins = self.usr_cfg[18]
                     nbeams = self.usr_cfg[10]
                     j = 0
                     for beam in range(nbeams):
                         for bin in range(nbins):
-                            yield struct.unpack('<h',data[j:j+2])[0]/1000
+                            cells.append(struct.unpack('<h',data[j:j+2])[0]/1000)
                             j += 2
+                            await asyncio.sleep(0)
+                        await asyncio.sleep(0)
                     for beam in range(nbeams):
                         for bin in range(nbins):
-                            yield int.from_bytes(data[j:j+1], 'little')
+                            cells.append(int.from_bytes(data[j:j+1], 'little'))
                             j += 1
+                            await asyncio.sleep(0)
+                        await asyncio.sleep(0)
+                return cells
             except Exception as err:
                 log(self.__qualname__, 'get_cells', type(err).__name__, err)
 
@@ -513,58 +520,63 @@ class ADCP(DEVICE):
                 get_pressure(self.data[24:25], self.data[26:28]) / 1000,   # [13] Pressure
                 get_status(int.from_bytes(self.data[25:26],'little')),     # [14] Status code
                 struct.unpack('<h',self.data[28:30])[0] / 100,             # [15] Temperature
-                ) + tuple(get_cells(self.data[30:]))                       # [16:] x1,y1,z1, x2, y2, z2, x3, y3, z3...
+                ) + tuple(await get_cells(self.data[30:]))                 # [16:] x1,y1,z1, x2, y2, z2, x3, y3, z3...
         except Exception as err:
             log(self.__qualname__, 'conv_data', type(err).__name__, err)
 
-    def format_data(self, sample):
+    async def format_data(self, sample):
 
         def get_flow():
             return 0  # TODO: calc flow for rivers.
 
-        #try:
-        record = [
-        self.config['String_Label'],
-        '{}'.format(str(unix_epoch(self.ts))),
-        '{}'.format(iso8601(self.ts)),                                   # yyyy-mm-ddThh:mm:ssZ (controller)
-        '{:2s}/{:2s}/20{:2s}'.format(sample[2], sample[5], sample[4]),  # dd/mm/yyyy
-        '{:2s}:{:2s}'.format(sample[3], sample[0]),                     # hh:mm
-        '{:.2f}'.format(sample[8]),                                     # Battery
-        '{:.2f}'.format(sample[9]),                                     # SoundSpeed
-        '{:.2f}'.format(sample[10]),                                    # Heading
-        '{:.2f}'.format(sample[11]),                                    # Pitch
-        '{:.2f}'.format(sample[12]),                                    # Roll
-        '{:.2f}'.format(sample[13]),                                    # Pressure
-        '{:.2f}'.format(sample[15]),                                    # Temperature
-        '{:.2f}'.format(get_flow()),                                    # Flow
-        '{}'.format(self.usr_cfg[17]),                                  # CoordSystem
-        '{}'.format(self.usr_cfg[4]),                                   # TODO: BlankingDistance
-        '{}'.format(self.usr_cfg[20]),                                  # MeasInterval
-        '{:.2f}'.format(self.usr_cfg[19] * 0.01692620176 / 100),        # BinLength
-        '{}'.format(self.usr_cfg[18]),                                  # NBins
-        '{}'.format(sample[14][0])                                      # TiltSensorMounting
-        ]
+        try:
+            record = [
+            self.config['String_Label'],
+            '{}'.format(str(unix_epoch(self.ts))),
+            '{}'.format(iso8601(self.ts)),                                   # yyyy-mm-ddThh:mm:ssZ (controller)
+            '{:2s}/{:2s}/20{:2s}'.format(sample[2], sample[5], sample[4]),  # dd/mm/yyyy
+            '{:2s}:{:2s}'.format(sample[3], sample[0]),                     # hh:mm
+            '{:.2f}'.format(sample[8]),                                     # Battery
+            '{:.2f}'.format(sample[9]),                                     # SoundSpeed
+            '{:.2f}'.format(sample[10]),                                    # Heading
+            '{:.2f}'.format(sample[11]),                                    # Pitch
+            '{:.2f}'.format(sample[12]),                                    # Roll
+            '{:.2f}'.format(sample[13]),                                    # Pressure
+            '{:.2f}'.format(sample[15]),                                    # Temperature
+            '{:.2f}'.format(get_flow()),                                    # Flow
+            '{}'.format(self.usr_cfg[17]),                                  # CoordSystem
+            '{}'.format(self.usr_cfg[4]),                                   # TODO: BlankingDistance
+            '{}'.format(self.usr_cfg[20]),                                  # MeasInterval
+            '{:.2f}'.format(self.usr_cfg[19] * 0.01692620176 / 100),        # BinLength
+            '{}'.format(self.usr_cfg[18]),                                  # NBins
+            '{}'.format(sample[14][0])                                      # TiltSensorMounting
+            ]
 
-        j = 16
-        for bin in range(self.usr_cfg[18]):
-            record.append('#{}'.format(bin + 1))                        # (#Cell number)
-            for beam in range(self.usr_cfg[10]):
-                record.append('{:.3f}'.format(sample[j+beam*self.usr_cfg[18]]))
-            j += 1
-        return record
-        #except Exception as err:
-        #    log(self.__qualname__, 'format_data', type(err).__name__, err)
+            j = 16
+            for bin in range(self.usr_cfg[18]):
+                record.append('#{}'.format(bin + 1))                        # (#Cell number)
+                for beam in range(self.usr_cfg[10]):
+                    record.append('{:.3f}'.format(sample[j+beam*self.usr_cfg[18]]))
+                    await asyncio.sleep(0)
+                j += 1
+                await asyncio.sleep(0)
+            return record
+        except Exception as err:
+            log(self.__qualname__, 'format_data', type(err).__name__, err)
 
     async def log(self):
         #with open(dfl.DATA_DIR + cfg.RAW_DIR + '/' + dailyfile() + '.prf', 'ab') as raw:
         #    raw.write(self.data)
-        #try:
-        await log_data(dfl.DATA_SEPARATOR.join(self.format_data(self.conv_data())))
-        #except Exception as err:
-        #    log(self.__qualname__, 'log', type(err).__name__, err)
+        try:
+            cnv = await self.conv_data()
+            fmt = await self.format_data(cnv)
+            await log_data(dfl.DATA_SEPARATOR.join(fmt))
+        except Exception as err:
+            log(self.__qualname__, 'log', type(err).__name__, err)
 
     # Scheduled.
     async def scheduled(self):
+        log(self.__qualname__, 'acquiring data...')  # DEBUG
         pyb.LED(3).on()
         await self.parse_cfg()
         try:

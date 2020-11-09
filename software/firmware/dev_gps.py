@@ -77,6 +77,8 @@ class GPS(DEVICE):
         try:
             rtc.calibration(cfg.RTC_CALIBRATION)
             log(self.__qualname__, 'rtc calibration factor', cfg.RTC_CALIBRATION)
+        except Exception as err:
+            log(self.__qualname__, 'sync_rtc', type(err).__name__, err, type='e')
         try:
             rtc.datetime((
                 int('20'+dt[4:6]),  # yyyy
