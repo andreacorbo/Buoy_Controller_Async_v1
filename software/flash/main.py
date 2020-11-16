@@ -55,7 +55,7 @@ async def listner():
 						and (stream.__class__.__name__ == 'UART'
 							and session.loggedin
 							or stream.__class__.__name__ == 'USB_VCP')
-						and not menu.interactive:
+						and not menu.interactive):
 						asyncio.create_task(menu.main(m,stream,devs))
 						m.set(b)  # Passes ESC to menu.
 						menu.interactive = True

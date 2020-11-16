@@ -169,8 +169,8 @@ class MODEM(DEVICE, YMODEM):
                         if await self.asend(files_to_send()):  # Puts files.
 	                        if await self.arecv():  # Gets files.
 								self.disconnect.set()  # Restores user interaction.
-                        		await asyncio.sleep(self.keep_alive)  # Awaits user interaction.
-                        		break
+                                await asyncio.sleep(self.keep_alive)  # Awaits user interaction.
+                                break
                     await self.hangup()
                 if ca < self.call_attempt:
                     await asyncio.sleep(self.at_delay)

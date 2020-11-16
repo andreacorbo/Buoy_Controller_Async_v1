@@ -17,7 +17,7 @@ port="/ports/stm32"
 manifest="/boards/manifest.py"
 
 # Enables _thread module in ports/stm32/mpconfigport.h
-#sed -i "s|#define MICROPY_PY_THREAD           (0)|#define MICROPY_PY_THREAD           (1)|g" $dest$port/mpconfigport.h
+sed -i "s|#define MICROPY_PY_THREAD           (0)|#define MICROPY_PY_THREAD           (1)|g" $dest$port/mpconfigport.h
 
 rm -rv $dest$modules/*
 
