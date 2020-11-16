@@ -126,7 +126,7 @@ class METEO(DEVICE):
         try:
             for sample in samples():
                 if sample[0] == self.ws_max():
-                    maxdir = sample[1] / 10
+                    maxdir = sample[1]
         except Exception as err:
             log(self.__qualname__,'wd_max ({}): {}'.format(type(err).__name__, err))
         return maxdir

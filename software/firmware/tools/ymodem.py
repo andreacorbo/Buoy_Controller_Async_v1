@@ -74,7 +74,7 @@ class YMODEM:
         self.retry = retry
         self.tout = timeout
         self.mode = mode
-        self.daily = dailyfile     # Daily file.
+        self.daily = dailyfile()     # Daily file.
 
     ############################################################################
     # Asynchronous receiver.
@@ -83,15 +83,37 @@ class YMODEM:
 
         msg = Message()  # Message to wait for threads completion.
 
+
+        def finalize(file,length):
+            tmp = file.replace(file.split('/')[-1], TPFX + file.split('/')[-1])
+            bkp = file.replace(file.split('/')[-1], BPFX + file.split('/')[-1])
+            sz = int(os.stat(tmp)[6])
+            if sz == length:
+                try:
+                    os.rename(file,bkp)  # Backups existing file.
+                except:
+                    verbose('FILE {} NOT EXISTS'.format(file))
+                try:
+                    os.rename(tmp,file)
+                except:
+                    verbose('UNABLE TO COMMIT FILE {}'.format(tmp))
+                    os.remove(tmp)
+            else:
+                try:
+                    os.remove(tmp)
+                except:
+                    verbose('UNABLE TO REMOVE FILE {}'.format(tmp))
+
         # Writes out data to the passed file.
         # Runs in a separate thread to not block scheduler.
         def w_data(file, data, msg):
+            tmp = file.replace(file.split('/')[-1], TPFX + file.split('/')[-1])
             try:
-                with open(file, 'ab') as s:
+                with open(tmp, 'ab') as s:
                     s.write(data)
                 msg.set(True)
             except:
-                verbose('ERROR OPENING {}'.format(file))
+                verbose('ERROR OPENING {}'.format(tmp))
                 msg.set(False)
 
         async def cancel():
@@ -236,6 +258,7 @@ class YMODEM:
                     verbose('EOT <--')
                     if not await ack():  # Acknowledges EOT.
                         return False
+                    finalize(fname,length)
                     seq = 0
                     isz = 0
                     if not await ctr():  # Clears to receive.
@@ -284,6 +307,7 @@ class YMODEM:
                                 if data == bytearray(sz):  # Sequence 0 with null data state end of trasmission.
                                     if not await ack():  # Acknowledges EOT.
                                         return False
+                                    await asyncio.sleep(1)
                                     verbose('END OF TRANSMISSION')
                                     return True
                                 ds = []  # Data string.
@@ -297,20 +321,12 @@ class YMODEM:
                                 fname = ds[0]
                                 length = int(ds[1].split(' ')[0])
                                 verbose('RECEIVING FILE {}'.format(fname))
-                                ################################################
-                                try:
-                                    os.remove(fname)
-                                except:
-                                    verbose('UNABLE TO REMOVE FILE {}'.format(fname))
-
-                                ################################################
                                 if not await ack():  # Acknowledges packet.
                                     return False
                                 if not await ctr():  # Clears for transmission.
                                     return False
                                 ec = 0
                             else:
-                                isz += len(data)
                                 tn = isz - length  # Counts trailing null chars.
                                 _thread.start_new_thread(w_data,(fname, data[:-tn], msg))
                                 await asyncio.sleep_ms(10)
@@ -322,6 +338,7 @@ class YMODEM:
                                 else:
                                     if not await ack():
                                         return False
+                                    isz += len(data)
                                     ec = 0
                                 msg.clear()
                             seq = (seq + 1) % 0x100  # Calcs next expected seq.
@@ -349,7 +366,7 @@ class YMODEM:
         def set_lb(tmpf,ptr,msg):
             with open(tmpf, 'w') as t:
                 t.write(str(ptr))
-            msg.set(True)
+            msg.set()
 
         # Gets last read byte.
         def get_lb(tmpf,msg):
@@ -502,7 +519,7 @@ class YMODEM:
             if f != '\x00':
                 if f.split('/')[-1] == self.daily:
                     # Daily file gets copied before being sent.
-                    f = await bkp_f()
+                    f = await bkp_f(f)
                 _thread.start_new_thread(get_lb, (tmpf,msg))
                 await asyncio.sleep_ms(10)
                 await msg
@@ -540,7 +557,7 @@ class YMODEM:
             _thread.start_new_thread(mk_cksum,(data,crc_mode,msg))
             await asyncio.sleep_ms(10)
             await msg
-            cksum =msg.value()
+            cksum = msg.value()
             msg.clear()
             await asyncio.sleep(0.1)
             while True:
@@ -627,7 +644,7 @@ class YMODEM:
                 _thread.start_new_thread(mk_cksum,(data,crc_mode,msg))
                 await asyncio.sleep_ms(10)
                 await msg
-                cksum =msg.value()
+                cksum = msg.value()
                 msg.clear()
                 ec = 0
                 while True:
@@ -661,13 +678,13 @@ class YMODEM:
                             break
                         elif c == ACK:
                             verbose('<-- ACK TO PACKET {}'.format(seq))
-                            _thread.start_new_thread(set_lb, (tmpf,tptr,msg))
+                            ptr = tptr  # Updates pointer.
+                            _thread.start_new_thread(set_lb, (tmpf,ptr,msg))
                             await asyncio.sleep_ms(10)
                             await msg
                             msg.clear()
                             ackd = 1
                             sc += 1
-                            ptr = tptr  # Updates pointer.
                             seq = (seq + 1) % 0x100
                             break
                         elif c == NAK:

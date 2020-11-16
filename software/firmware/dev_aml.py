@@ -36,7 +36,6 @@ class CTD(DEVICE):
             await self.set('SCAN SALINITY')
             await self.set('SCAN SV')
             await self.zero()
-            #await timesync.wait()
             await self.set_clock()
             await self.set_log()
             await self.set('SCAN LOGGING')
@@ -207,7 +206,7 @@ class CTD(DEVICE):
         await asyncio.sleep(self.warmup_interval)
         pyb.LED(3).on()
         try:
-            self.data = await asyncio.wait_for(self.sreader.readline(), 2)
+            self.data = await asyncio.wait_for(self.sreader.readline(), 5)
         except asyncio.TimeoutError:
             self.data = b''
             log(self.__qualname__, 'no data received', type='e')
