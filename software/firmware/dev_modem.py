@@ -69,7 +69,7 @@ class MODEM(DEVICE, YMODEM):
                 or self.data.startswith(b'CONNECT')
                 ):
                 return True
-            await asyncio.sleep(0)
+            await asyncio.sleep_ms(100)
         return False
 
     # Waits for modem getting ready.
@@ -80,7 +80,7 @@ class MODEM(DEVICE, YMODEM):
             if await self.cmd('AT\r'):
                 if self.data.startswith(b'OK'):
                     return True
-            await asyncio.sleep(0)
+            await asyncio.sleep_ms(100)
         log(self.__qualname__, 'not ready')
         return False
 
@@ -174,6 +174,7 @@ class MODEM(DEVICE, YMODEM):
                     await self.hangup()
                 if ca < self.call_attempt:
                     await asyncio.sleep(self.at_delay)
+            self.uart.deinit()
             self.off()  # Restarts device.
             await asyncio.sleep(2)
             self.on()

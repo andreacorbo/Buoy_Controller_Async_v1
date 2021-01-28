@@ -161,10 +161,10 @@ class ADCP(DEVICE):
         if await self.brk():
             await self.swriter.awrite('GA')
             if await self.reply():
-                if self.ack()
+                if (self.ack()
                 and await self.verify_checksum(self.data[0:48])
                 and await self.verify_checksum(self.data[48:272])
-                and await self.verify_checksum(self.data[272:784]):
+                and await self.verify_checksum(self.data[272:784])):
                     _thread.start_new_thread(filewriter, ())
                     await asyncio.sleep_ms(10)
                     await self.evt.wait()

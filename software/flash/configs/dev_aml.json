@@ -17,7 +17,8 @@
 		"Sample_Rate":1,
 		"String_Label":"$METRECXR",
 		"Ctd":{
-			"Prompt_Timeout":60
+			"Prompt_Timeout":60,
+			"Wait_for_Enter":0
 		}
 	},
 	"UV":{

@@ -4,8 +4,9 @@
 import uasyncio as asyncio
 import time
 import pyb
-from math import sin, cos, radians, atan2, degrees, pow, sqrt
+from math import sin, cos, radians, atan2, degrees, pow, sqrt, pi
 from tools.utils import log, log_data, unix_epoch, iso8601
+from tools.itertools import islice
 from device import DEVICE
 
 class METEO(DEVICE):
@@ -61,6 +62,8 @@ class METEO(DEVICE):
                 speed = sample[0]
                 x = x + (sin(radians(direction)) * speed)
                 y = y + (cos(radians(direction)) * speed)
+            x = x / self.records
+            y = y / self.records
             avg = degrees(atan2(x, y))
             if avg < 0:
                 avg += 360
@@ -81,9 +84,11 @@ class METEO(DEVICE):
             for sample in samples():
                 direction = sample[1]
                 speed = sample[0]
-                x = x + (sin(radians(direction)) * pow(speed,2))
-                y = y + (cos(radians(direction)) * pow(speed,2))
-            avg = sqrt(x+y) / self.records
+                x = x + sin(radians(direction)) * speed
+                y = y + cos(radians(direction)) * speed
+            x = x / self.records
+            y = y / self.records
+            avg = sqrt(pow(x,2)+pow(y,2))
         except Exception as err:
             log(self.__qualname__,'ws_vect_avg ({}): {}'.format(type(err).__name__, err))
         return avg
@@ -101,35 +106,52 @@ class METEO(DEVICE):
             log(self.__qualname__,'ws_avg ({}): {}'.format(type(err).__name__, err))
         return avg
 
-    def ws_max(self):
-        # Gust speed.
+    def gust(self):
+        # Gust speed and direction.
         maxspeed = 0
-        def samples():
+        maxdir = 0
+
+        def ws_samples():
             i=0
             while i < len(self.data):
                 yield int(self.data[0+i:4+i]) * float(self.config['Meteo']['Windspeed_' + self.config['Meteo']['Windspeed_Unit']])
                 i += self.data_length
-        try:
-            maxspeed = max(samples())
-        except Exception as err:
-            log(self.__qualname__,'ws_max ({}): {}'.format(type(err).__name__, err))
-        return maxspeed
 
-    def wd_max(self):
-        # Gust direction.
-        maxdir = 0
         def samples():
             i=0
             while i < len(self.data):
                 yield [int(self.data[0+i:4+i]) * float(self.config['Meteo']['Windspeed_' + self.config['Meteo']['Windspeed_Unit']]), int(self.data[5+i:9+i])/10]
                 i += self.data_length
         try:
-            for sample in samples():
-                if sample[0] == self.ws_max():
-                    maxdir = sample[1]
+            glist = list()
+            j = int(self.config['Meteo']['Gust_Duration'] * self.config['Sample_Rate'])
+            i = 0
+            s = 0
+            for sample in ws_samples():
+                s = s + sample
+                i += 1
+                if i == j:
+                    glist.append(s / j)
+                    i = 0
+                    s = 0
+            maxspeed = max(glist)
+            gstart = glist.index(maxspeed) * j
+            x = 0
+            y = 0
+            for sample in islice(samples(), gstart, gstart+j, 1):
+                direction = sample[1]
+                speed = sample[0]
+                x = x + (sin(radians(direction)) * speed)
+                y = y + (cos(radians(direction)) * speed)
+            x = x / j
+            y = y / j
+            avg = degrees(atan2(x, y))
+            if avg < 0:
+                avg += 360
+            maxdir = avg
         except Exception as err:
-            log(self.__qualname__,'wd_max ({}): {}'.format(type(err).__name__, err))
-        return maxdir
+            log(self.__qualname__,'ws_max ({}): {}'.format(type(err).__name__, err))
+        return maxspeed, maxdir
 
     def temp_avg(self):
         avg = 0
@@ -206,19 +228,19 @@ class METEO(DEVICE):
     async def log(self):
         self.ts = time.time()
         await log_data(
-            '{},{},{},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:.1f},{:0d},{:.1f}'.format(
+            '{},{},{},{:.2f},{:.2f},{:.2f},{:.2f},{:.2f},{:.2f},{:.2f},{:.2f},{:.2f},{:0d},{:.2f}'.format(
                 self.string_label,
                 str(unix_epoch(self.ts)),
                 iso8601(self.ts),  # yyyy-mm-ddThh:mm:ssZ (controller)
-                self.wd_vect_avg(),  # vectorial avg wind direction
+                self.wd_vect_avg(),  # vect avg wind direction
                 self.ws_avg(),  # avg wind speed
                 self.temp_avg(),  # avg temp
                 self.press_avg(),  # avg pressure
                 self.hum_avg(),  # avg relative humidity
                 self.compass_avg(),  # avg heading
                 self.ws_vect_avg(),  # vectorial avg wind speed
-                self.ws_max(),  # gust speed
-                self.wd_max(),  # gust direction
+                self.gust()[0], # gust speed
+                self.gust()[1], # gust direction
                 self.records,  # number of records
                 self.radiance_avg()  # solar radiance (optional)
                 )
@@ -248,6 +270,35 @@ class METEO(DEVICE):
         self.records = len(self.data) // self.data_length
         if self.data:
             await self.log()
+        pyb.LED(3).off()
+        self.uart.deinit()
+        self.off()
+
+    async def manual(self):
+        self.on()
+        self.init_uart()
+        await asyncio.sleep(self.warmup_interval)
+        pyb.LED(3).on()
+        while True:
+            self.data = b''
+            t0 = time.time()
+            while not self._timeout(t0, self.timeout):
+                try:
+                    line = await asyncio.wait_for(self.sreader.readline(), self.timeout)
+                except asyncio.TimeoutError:
+                    log(self.__qualname__, 'no data received', type='e')
+                    break
+                if not self.decode(line):
+                    await asyncio.sleep(0)
+                    continue
+                if len(line) == self.data_length:
+                    self.data += line
+                if len(self.data) == self.samples * self.data_length:
+                    break
+                await asyncio.sleep(0)
+            self.records = len(self.data) // self.data_length
+            if self.data:
+                await self.log()
         pyb.LED(3).off()
         self.uart.deinit()
         self.off()

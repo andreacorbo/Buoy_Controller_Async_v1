@@ -202,7 +202,8 @@ class CTD(DEVICE):
         self.on()
         self.init_uart()
         await asyncio.sleep(1)
-        await self.swriter.awrite(ENTER)
+        if self.config['Ctd']['Wait_for_Enter'] == 1:
+            await self.swriter.awrite(ENTER)
         await asyncio.sleep(self.warmup_interval)
         pyb.LED(3).on()
         try:

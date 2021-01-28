@@ -30,42 +30,35 @@ async def cleaner():
 
 # Listens on uart / usb.
 async def listner():
-	global devs
-	m = Message()
-	async def poller(stream):
-		sreader = asyncio.StreamReader(stream)
-		i=0
-		while True:
-			await scheduling.wait() and await disconnect.wait()
-			b = await sreader.read(1)
-			if b:
-				try:
-					b.decode('utf-8')
-				except UnicodeError:
-					await asyncio.sleep(0)
-					continue
-				if (b == dfl.ESC_CHAR.encode()
-					and stream.__class__.__name__ == 'UART'
-					and not session.logging):
-					i += 1
-					if i > 2:
-						asyncio.create_task(session.login(m,stream))
-						session.logging = True
-					elif (b == b'\x1b'
-						and (stream.__class__.__name__ == 'UART'
-							and session.loggedin
-							or stream.__class__.__name__ == 'USB_VCP')
-						and not menu.interactive):
-						asyncio.create_task(menu.main(m,stream,devs))
-						m.set(b)  # Passes ESC to menu.
-						menu.interactive = True
-					else:
-						m.set(b)
-						i=0
-			asyncio.sleep_ms(100)
-
-	asyncio.create_task(poller(pyb.UART(3,9600)))  # Polls the modem uart.
-	asyncio.create_task(poller(pyb.USB_VCP()))  # Polls the usb vcp.
+    global devs
+    m = Message()
+    async def poller(stream):
+        sreader = asyncio.StreamReader(stream)
+        i=0
+        while True:
+            await scheduling.wait() and await disconnect.wait()
+            b = await sreader.read(1)
+            if b:
+                try:
+                    b.decode('utf-8')
+                except UnicodeError:
+            	    await asyncio.sleep(0)
+            	    continue
+                if (b == dfl.ESC_CHAR.encode() and stream.__class__.__name__ == 'UART' and not session.logging):
+                    i += 1
+                    if i > 2:
+    					asyncio.create_task(session.login(m,stream))
+    					session.logging = True
+                elif (b == b'\x1b' and (stream.__class__.__name__ == 'UART' and session.loggedin or stream.__class__.__name__ == 'USB_VCP') and not menu.interactive):
+                    asyncio.create_task(menu.main(m,stream,devs))
+                    m.set(b)  # Passes ESC to menu.
+                    menu.interactive = True
+                else:
+                    m.set(b)
+                    i=0
+            await asyncio.sleep_ms(100)
+    asyncio.create_task(poller(pyb.UART(3,9600)))  # Polls the modem uart.
+    asyncio.create_task(poller(pyb.USB_VCP()))  # Polls the usb vcp.
 
 # Sends an sms as soon is generated.
 async def alerter(txt):
@@ -82,13 +75,13 @@ async def launcher(obj,tasks):
             asyncio.create_task(obj.main())
 
 # Periodically feeds the watchdog timer.
-async def feeder():
-    log('starting the wdt...')
-    wdt = machine.WDT(timeout=dfl.WD_TIMEOUT)  # Starts the watchdog timer.
-    while True:
-        wdt.feed()
-        log('feeding the wdt...')
-        await asyncio.sleep_ms(dfl.WD_TIMEOUT - 5000)
+#async def feeder():
+#    log('starting the wdt...')
+#    wdt = machine.WDT(timeout=dfl.WD_TIMEOUT)  # Starts the watchdog timer.
+#    while True:
+#        wdt.feed()
+#        log('feeding the wdt...')
+#        await asyncio.sleep_ms(dfl.WD_TIMEOUT - 5000)
 
 async def main():
 
@@ -121,6 +114,7 @@ async def main():
     # Initialises the scheduler.
     msg(' START SCHEDULER ')
     scheduling.set()
+    disconnect.set()
     for c in cfg.CRON:
         asyncio.create_task(schedule(
             launcher,

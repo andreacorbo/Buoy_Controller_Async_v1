@@ -13,7 +13,7 @@
 			"Read_Char_Attempt":10
 		},
 		"Warmup_Interval":5,
-		"Samples":20,
+		"Samples":120,
 		"Sample_Rate":2,
 		"String_Label":"$YOUNG",
 		"Data_Length":41,
@@ -30,7 +30,8 @@
 			"Press_Conv_0":0.02,
 			"Press_Conv_1":950,
 			"Hum_Conv_0":0.0125,
-			"Rad_Conv_0":0.35862
+			"Rad_Conv_0":0.35862,
+			"Gust_Duration":3
 		}
 	}
 }
