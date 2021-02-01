@@ -103,7 +103,7 @@ class GPS(DEVICE):
             await asyncio.sleep(0)
         if '{:02X}'.format(cksum) == self.data[-4:-2]:
             return True
-        log(self.__qualname__, 'NMEA invalid checksum calculated: {:02X} got: {}'.format(cksum, self.data[-4:-2]))
+        log(self.__qualname__, 'NMEA invalid checksum calculated: {:02X} got: {}, {}'.format(cksum, self.data[-4:-2], self.data))
         return False
 
     def decoded(self):
@@ -111,7 +111,7 @@ class GPS(DEVICE):
             self.data = self.data.decode('utf-8')
             return True
         except UnicodeError:
-            log(self.__qualname__, 'communication error')
+            # log(self.__qualname__, 'communication error') obviously useless!!!
             return False
 
     async def main(self, task='log'):

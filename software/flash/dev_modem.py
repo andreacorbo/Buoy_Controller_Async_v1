@@ -39,6 +39,7 @@ class MODEM(DEVICE, YMODEM):
         self.init_uart()
         if await self.is_ready():
             await self.init()
+        self.disconnect.set()
 
     def decode(self):
         try:
@@ -66,10 +67,11 @@ class MODEM(DEVICE, YMODEM):
             if (self.data.startswith(b'OK')
                 or self.data.startswith(b'ERROR')
                 or self.data.startswith(b'NO CARRIER')
+                or self.data.startswith(b'NO ANSWER')
                 or self.data.startswith(b'CONNECT')
                 ):
                 return True
-            await asyncio.sleep_ms(100)
+            await asyncio.sleep_ms(10)
         return False
 
     # Waits for modem getting ready.
@@ -152,8 +154,11 @@ class MODEM(DEVICE, YMODEM):
                     if res == b'\x06':  # ACK
                         verbose('<-- ACK')
                         return True
+                    else:
+                        ec += 1
                 except asyncio.TimeoutError:
                     ec += 1
+            await asyncio.sleep(1)
         return False
 
     # Sends and receives data.
@@ -171,7 +176,7 @@ class MODEM(DEVICE, YMODEM):
 								self.disconnect.set()  # Restores user interaction.
                                 await asyncio.sleep(self.keep_alive)  # Awaits user interaction.
                                 break
-                    await self.hangup()
+                    #await self.hangup()
                 if ca < self.call_attempt:
                     await asyncio.sleep(self.at_delay)
             self.uart.deinit()
@@ -184,6 +189,7 @@ class MODEM(DEVICE, YMODEM):
     async def sms(self, text):
         async with self.semaphore:
             self.disconnect.clear()
+            self.init_uart()
             self.reply_timeout = self.at_timeout
             log(self.__qualname__,'sending sms...')
             for at in self.sms_ats:

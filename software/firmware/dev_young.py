@@ -34,7 +34,7 @@ class METEO(DEVICE):
             data.decode('utf-8')
             return True
         except UnicodeError:
-            log(self.__qualname__, 'communication error')
+            # log(self.__qualname__, 'communication error') obviously useless!!!
             return False
 
     async def is_ready(self):

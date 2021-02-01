@@ -20,7 +20,7 @@
 			"Break_Timeout":60,
 			"Deployment_Config":"aquadopp1.pcf",
 			"Instrument_Config":"aquadopp1.cfg",
-			"Deployment_Delay":5
+			"Deployment_Delay":30
 		}
 	}
 }

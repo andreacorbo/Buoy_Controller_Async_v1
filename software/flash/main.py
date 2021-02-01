@@ -114,7 +114,7 @@ async def main():
     # Initialises the scheduler.
     msg(' START SCHEDULER ')
     scheduling.set()
-    disconnect.set()
+    #disconnect.set()
     for c in cfg.CRON:
         asyncio.create_task(schedule(
             launcher,
