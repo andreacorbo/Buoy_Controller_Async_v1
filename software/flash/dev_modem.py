@@ -4,7 +4,7 @@
 import uasyncio as asyncio
 from primitives.semaphore import Semaphore
 import time
-from tools.utils import log, verbose, files_to_send, disconnect
+from tools.utils import log, verbose, files_to_send, disconnect, trigger
 from configs import dfl, cfg
 from device import DEVICE
 from tools.ymodem import YMODEM
@@ -32,6 +32,7 @@ class MODEM(DEVICE, YMODEM):
         self.sms_ats = self.config['Modem']['Sms_Ats']
         self.sms_to = self.config['Modem']['Sms_To']
         self.sms_timeout = self.config['Modem']['Sms_Timeout']
+        self.trigger = trigger
         YMODEM.__init__(self, self.agetc, self.aputc)
 
     async def startup(self, **kwargs):
@@ -163,8 +164,9 @@ class MODEM(DEVICE, YMODEM):
 
     # Sends and receives data.
     async def datacall(self):
+        self.trigger.set(False)
         async with self.semaphore:
-            self.disconnect.clear()  # Locks user interaction.
+            #self.disconnect.clear()  # Locks user interaction.
             self.init_uart()
             ca = 0  # Attempts counter.
             for _ in range(self.call_attempt):
@@ -183,19 +185,22 @@ class MODEM(DEVICE, YMODEM):
             self.off()  # Restarts device.
             await asyncio.sleep(2)
             self.on()
-            self.disconnect.set()  # Restores user interaction.
+            #self.disconnect.set()  # Restores user interaction.
+            self.trigger.set(True)
 
     # Sends an sms.
     async def sms(self, text):
         async with self.semaphore:
             self.disconnect.clear()
+            self.trigger.set(False)
             self.init_uart()
             self.reply_timeout = self.at_timeout
             log(self.__qualname__,'sending sms...')
             for at in self.sms_ats:
                 if not await self.cmd(at):
                     log(self.__qualname__,'sms failed', at)
-                    self.disconnect.set()
+                    #self.disconnect.set()
+                    self.trigger.set(True)
                     return False
                 await asyncio.sleep(self.at_delay)
             await self.swriter.awrite(self.sms_to)
@@ -203,7 +208,8 @@ class MODEM(DEVICE, YMODEM):
                 self.data = await asyncio.wait_for(self.sreader.readline(), self.reply_timeout)
             except asyncio.TimeoutError:
                 log(self.__qualname__,'sms failed', self.sms_to)
-                self.disconnect.set()
+                #self.disconnect.set()
+                self.trigger.set(True)
                 return False
             if self.data.startswith(self.sms_to):
                 verbose(self.data)
@@ -211,7 +217,8 @@ class MODEM(DEVICE, YMODEM):
                     self.data = await asyncio.wait_for(self.sreader.read(2), self.reply_timeout)
                 except asyncio.TimeoutError:
                     log(self.__qualname__,'sms failed')
-                    self.disconnect.set()
+                    #self.disconnect.set()
+                    self.trigger.set(True)
                     return False
                 if self.data.startswith(b'>'):
                     verbose(self.data)
@@ -220,15 +227,18 @@ class MODEM(DEVICE, YMODEM):
                         self.data = await asyncio.wait_for(self.sreader.readline(), 60)
                     except asyncio.TimeoutError:
                         log(self.__qualname__,'sms failed')
-                        self.disconnect.set()
+                        #self.disconnect.set()
+                        self.trigger.set(True)
                         return False
                     if self.data.startswith(text):
                         verbose(self.data)
                         if await self.cmd('\x1a'):
-                            self.disconnect.set()
+                            #self.disconnect.set()
+                            self.trigger.set(True)
                             return True
             log(self.__qualname__,'sms failed')
-            self.disconnect.set()
+            #self.disconnect.set()
+            self.trigger.set(True)
             return False
 
     async def main(self, task='datacall'):

@@ -103,7 +103,7 @@ class GPS(DEVICE):
             await asyncio.sleep(0)
         if '{:02X}'.format(cksum) == self.data[-4:-2]:
             return True
-        log(self.__qualname__, 'NMEA invalid checksum calculated: {:02X} got: {}, {}'.format(cksum, self.data[-4:-2], self.data))
+        log(self.__qualname__, 'NMEA invalid checksum calculated: {:02X} got: {}'.format(cksum, self.data[-4:-2]))
         return False
 
     def decoded(self):
@@ -133,7 +133,7 @@ class GPS(DEVICE):
                 log(self.__qualname__, 'no data received', type='e')
                 break
             if self.decoded():
-                if self.data.startswith('$') and self.data.endswith('\r\n'):
+                if self.data.startswith('$') and self.data.endswith('\r\n') and self.data.count('$') == 1:
                     if await self.verify_checksum():
                         if self.data[3:6] == 'RMC':
                             rmc = self.data

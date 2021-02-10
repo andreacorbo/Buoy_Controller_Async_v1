@@ -12,7 +12,7 @@ import machine
 import pyb
 import session
 import menu
-from tools.utils import iso8601, scheduling, alert, log, welcome_msg, blink, msg, timesync, disconnect
+from tools.utils import iso8601, scheduling, alert, log, welcome_msg, blink, msg, timesync, disconnect, trigger
 from configs import dfl, cfg
 
 devs = []
@@ -29,14 +29,15 @@ async def cleaner():
         await asyncio.sleep_ms(1000)
 
 # Listens on uart / usb.
-async def listner():
+async def listner(trigger):
     global devs
     m = Message()
+    trigger.set(True)
     async def poller(stream):
         sreader = asyncio.StreamReader(stream)
         i=0
         while True:
-            await scheduling.wait() and await disconnect.wait()
+            await scheduling.wait() #and await disconnect.wait()
             b = await sreader.read(1)
             if b:
                 try:
@@ -57,8 +58,16 @@ async def listner():
                     m.set(b)
                     i=0
             await asyncio.sleep_ms(100)
-    asyncio.create_task(poller(pyb.UART(3,9600)))  # Polls the modem uart.
     asyncio.create_task(poller(pyb.USB_VCP()))  # Polls the usb vcp.
+    while True:
+        await trigger.wait()
+        print(trigger.value())
+        if trigger.value():
+            polluart = asyncio.create_task(poller(pyb.UART(3,9600)))  # Polls the modem uart.
+        else:
+            polluart.cancel()
+        trigger.clear()
+        await asyncio.sleep_ms(100)
 
 # Sends an sms as soon is generated.
 async def alerter(txt):
@@ -138,14 +147,14 @@ welcome_msg()
 asyncio.create_task(blink(4, 1, 2000, stop_evt=timesync))  # Blue, no gps fix.
 asyncio.create_task(blink(3, 100, 1000, cancel_evt=scheduling))  # Yellow, initialisation.
 asyncio.create_task(blink(2, 1, 2000, start_evt=timesync))  # Green, operating.
-asyncio.create_task(listner())
+asyncio.create_task(listner(trigger))
 asyncio.create_task(alerter(alert))
 asyncio.create_task(cleaner())
 
 try:
     asyncio.run(main())
-    #loop.set_exception_handler(_handle_exception)
+    loop.set_exception_handler(_handle_exception)
 except KeyboardInterrupt:
     pass
-finally:
-    asyncio.new_event_loop()  # Clear retained state.
+#finally:
+#    asyncio.new_event_loop()  # Clear retained state.

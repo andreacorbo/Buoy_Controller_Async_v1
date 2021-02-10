@@ -15,6 +15,7 @@ logger = True  # Prints out messages.
 
 f_lock = asyncio.Lock()  # Data file lock.
 alert = Message()  # Sms message.
+trigger = Message()
 timesync = asyncio.Event()  # Gps fix event.
 scheduling = asyncio.Event()  # Scheduler event.
 disconnect = asyncio.Event()  # Modem event.

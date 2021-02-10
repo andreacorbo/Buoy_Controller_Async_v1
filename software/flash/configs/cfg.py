@@ -20,7 +20,7 @@ CRON = (
     ['uv', None, None, None, None, None, range(0, 60, 10), 0, None],                # every 10 minutes
     ['adcp', None, None, None, None, None, range(0, 60, 10), 0, None],              # every 10 minutes (default)
     ['sysmon', None, None, None, None, None, range(0, 60, 10), 0, None],            # every 10 minutes
-    ['modem', 'datacall', None, None, None, None, range(0, 60, 5), 0, None]             # every 30 minutes @ 5th minute
+    ['modem', 'datacall', None, None, None, None, range(5, 60, 30), 0, None]             # every 30 minutes @ 5th minute
     )
 BUF_DAYS = 5
 DISPLACEMENT_THRESHOLD = 0.002699784#0.02699784 # Nautical miles: (50meters)
