@@ -156,5 +156,5 @@ try:
     loop.set_exception_handler(_handle_exception)
 except KeyboardInterrupt:
     pass
-#finally:
-#    asyncio.new_event_loop()  # Clear retained state.
+finally:
+    asyncio.new_event_loop()  # Clear retained state.
