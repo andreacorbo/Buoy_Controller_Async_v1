@@ -22,6 +22,7 @@ NAK = b'\x15'  # 21
 CAN = b'\x18'  # 24
 C = b'\x43'  # 67
 PAD = b'\x1a'
+NULL = b''
 ################################################################################
 # File identifiers
 ################################################################################
@@ -75,6 +76,7 @@ class YMODEM:
         self.tout = timeout
         self.mode = mode
         self.daily = dailyfile()     # Daily file.
+        self.nulls = 0  # TODO os.stat on windows gives more bytes than real filesize
 
     ############################################################################
     # Asynchronous receiver.
@@ -87,7 +89,7 @@ class YMODEM:
         def finalize(file,length):
             tmp = file.replace(file.split('/')[-1], TPFX + file.split('/')[-1])
             bkp = file.replace(file.split('/')[-1], BPFX + file.split('/')[-1])
-            sz = int(os.stat(tmp)[6])
+            sz = int(os.stat(tmp)[6]) + self.nulls
             if sz == length:
                 try:
                     os.rename(file,bkp)  # Backups existing file.
@@ -98,6 +100,7 @@ class YMODEM:
                 except:
                     verbose('UNABLE TO COMMIT FILE {}'.format(tmp))
                     os.remove(tmp)
+                    os.rename(bkp, file)  # Restore original file.
             else:
                 try:
                     os.remove(tmp)
@@ -110,7 +113,8 @@ class YMODEM:
             tmp = file.replace(file.split('/')[-1], TPFX + file.split('/')[-1])
             try:
                 with open(tmp, 'ab') as s:
-                    s.write(data)
+                    self.nulls = data.count(PAD)
+                    s.write(data.replace(PAD,NULL))
                 msg.set(True)
             except:
                 verbose('ERROR OPENING {}'.format(tmp))

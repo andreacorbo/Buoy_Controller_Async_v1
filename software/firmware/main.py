@@ -61,7 +61,6 @@ async def listner(trigger):
     asyncio.create_task(poller(pyb.USB_VCP()))  # Polls the usb vcp.
     while True:
         await trigger.wait()
-        print(trigger.value())
         if trigger.value():
             polluart = asyncio.create_task(poller(pyb.UART(3,9600)))  # Polls the modem uart.
         else:
