@@ -192,4 +192,3 @@ class GPS(DEVICE):
         await u2_lock.acquire()
         self.on()
         u2_lock.release()
-        

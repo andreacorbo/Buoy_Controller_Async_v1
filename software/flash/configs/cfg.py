@@ -9,7 +9,7 @@ DEVS = (
     "dev_nortek.ADCP",
     None,
     "dev_gps.GPS"
-    )  # Ordered as bob ports.
+    )  # Ordered as bob ports
 
 CRON = (
     #[object, tasks, wday, month, mday, hours, mins, secs, times],
