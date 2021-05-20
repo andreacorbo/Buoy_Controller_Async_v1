@@ -191,3 +191,5 @@ class GPS(DEVICE):
         await asyncio.sleep(5)
         await u2_lock.acquire()
         self.on()
+        u2_lock.release()
+        
