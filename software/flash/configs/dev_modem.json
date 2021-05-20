@@ -25,7 +25,7 @@
 			"Call_Ats":["ATD3284135433\r"],
 			"Hangup_Ats":["+++","ATH\r"],
 			"Sms_Ats":["AT+CMGF=1\r", "AT+CSCS=\"GSM\"\r"],
-			"Sms_To":"AT+CMGS=\"+393664259612\"\r",
+			"Sms_To":"AT+CMGS=\"+393664259612,+393664259612\"\r",
 			"Ymodem_Delay":2,
 			"Keep_Alive":1
 		}

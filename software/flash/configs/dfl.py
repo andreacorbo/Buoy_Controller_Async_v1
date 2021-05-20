@@ -16,6 +16,7 @@ DEVS = (
     None,
     None,
     None,
+    None,
     "dev_modem.MODEM",
     "dev_board.SYSMON"
     )  # Ordered as bob ports
@@ -25,6 +26,7 @@ UARTS = (
     None,
     6,
     1,
+    2,
     3
     )    # Ordered as bob ports.
 CTRL_PINS = (
@@ -32,7 +34,7 @@ CTRL_PINS = (
     "Y6",
     "Y4",
     "Y3",
-    #"X11",
+    "X11",
     "Y7",
     "Y5"
     )    # Ordered as bob ports.

@@ -5,7 +5,7 @@ import uasyncio as asyncio
 import time
 import pyb
 from math import sin, cos, sqrt, atan2, radians
-from tools.utils import log, log_data, timesync, set_alert, verbose
+from tools.utils import log, log_data, timesync, set_alert, verbose, u2_lock
 from configs import cfg
 from device import DEVICE
 
@@ -114,6 +114,7 @@ class GPS(DEVICE):
             # log(self.__qualname__, 'communication error') obviously useless!!!
             return False
 
+    '''
     async def main(self, task='log'):
         if isinstance(task,str):
             t=[]
@@ -149,3 +150,44 @@ class GPS(DEVICE):
             await self.log()
         self.uart.deinit()
         self.off()
+    '''
+    async def main(self, task='log'):
+        if isinstance(task,str):
+            t=[]
+            t.append(task)
+        else:
+            t = task
+        await u2_lock.acquire()
+        self.on()
+        self.init_uart()
+        self.fixed.clear()
+        rmc = ''
+        t0 = time.time()
+        while time.time() - t0 < self.warmup_interval:
+            try:
+                self.data = await asyncio.wait_for(self.sreader.readline(), self.warmup_interval)
+            except asyncio.TimeoutError:
+                self.data = b''
+                log(self.__qualname__, 'no data received', type='e')
+                break
+            if self.decoded():
+                if self.data.startswith('$') and self.data.endswith('\r\n') and self.data.count('$') == 1:
+                    if await self.verify_checksum():
+                        if self.data[3:6] == 'RMC':
+                            rmc = self.data
+                            if self.is_fixed():
+                                if 'last_fix' in t:
+                                    self.last_fix()
+                                if 'sync_rtc' in t:
+                                    self.sync_rtc()
+                                break
+            await asyncio.sleep(0)
+        if 'log' in t and rmc:
+            self.data = rmc[:-2]
+            await self.log()
+        self.uart.deinit()
+        self.off()
+        u2_lock.release()
+        await asyncio.sleep(5)
+        await u2_lock.acquire()
+        self.on()

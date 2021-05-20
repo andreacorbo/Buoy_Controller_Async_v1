@@ -5,7 +5,7 @@ import uasyncio as asyncio
 import time
 import pyb
 from math import sin, cos, radians, atan2, degrees, pow, sqrt, pi
-from tools.utils import log, log_data, unix_epoch, iso8601
+from tools.utils import log, log_data, unix_epoch, iso8601, u2_lock
 from tools.itertools import islice
 from device import DEVICE
 
@@ -22,12 +22,14 @@ class METEO(DEVICE):
         self.records = 0
 
     async def startup(self, **kwargs):
+        await u2_lock.acquire()
         self.on()
         self.init_uart()
         if await self.is_ready():
             log(self.__qualname__, 'successfully initialised')
         self.uart.deinit()
         self.off()
+        u2_lock.release()
 
     def decode(self, data):
         try:
@@ -247,6 +249,7 @@ class METEO(DEVICE):
             )
 
     async def main(self):
+        await u2_lock.acquire()
         self.on()
         self.init_uart()
         await asyncio.sleep(self.warmup_interval)
@@ -273,6 +276,7 @@ class METEO(DEVICE):
         pyb.LED(3).off()
         self.uart.deinit()
         self.off()
+        u2_lock.release()
 
     async def manual(self):
         self.on()

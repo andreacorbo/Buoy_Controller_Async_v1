@@ -19,6 +19,7 @@ trigger = Message()
 timesync = asyncio.Event()  # Gps fix event.
 scheduling = asyncio.Event()  # Scheduler event.
 disconnect = asyncio.Event()  # Modem event.
+u2_lock = asyncio.Lock() # Uart 2 lock.
 
 def welcome_msg():
     print(
