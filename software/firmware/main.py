@@ -86,18 +86,7 @@ async def launcher(obj,tasks):
         else:
             asyncio.create_task(obj.main())
 
-# Periodically feeds the watchdog timer.
-#async def feeder():
-#    log('starting the wdt...')
-#    wdt = machine.WDT(timeout=dfl.WD_TIMEOUT)  # Starts the watchdog timer.
-#    while True:
-#        wdt.feed()
-#        log('feeding the wdt...')
-#        await asyncio.sleep_ms(dfl.WD_TIMEOUT - 5000)
-
 async def main():
-
-    #asyncio.create_task(schedule(feeder, hrs=None, mins=None, secs=range(0,60,5), times=1))
 
     # Creates devs objects.
     global devs
