@@ -5,7 +5,7 @@ import uasyncio as asyncio
 import time
 import pyb
 from math import sin, cos, sqrt, atan2, radians
-from tools.utils import log, log_data, timesync, set_alert, verbose, u2_lock
+from tools.utils import log, log_data, timesync, set_alert, verbose, u2_lock, u4_lock
 from configs import cfg
 from device import DEVICE
 
@@ -103,7 +103,7 @@ class GPS(DEVICE):
             await asyncio.sleep(0)
         if '{:02X}'.format(cksum) == self.data[-4:-2]:
             return True
-        log(self.__qualname__, 'NMEA invalid checksum calculated: {:02X} got: {}'.format(cksum, self.data[-4:-2]))
+        #log(self.__qualname__, 'NMEA invalid checksum calculated: {:02X} got: {} {}'.format(cksum, self.data[-4:-2], self.data))
         return False
 
     def decoded(self):
@@ -157,8 +157,10 @@ class GPS(DEVICE):
             t.append(task)
         else:
             t = task
-        await u2_lock.acquire()
-        self.on()
+        await u2_lock.acquire()  # Locks down uart2 and rs232 transceiver.
+        await u4_lock.acquire()  # Locks down uart4 and rs232 transceiver.
+        if self.gpio.value() < 1:
+            self.on()
         self.init_uart()
         self.fixed.clear()
         rmc = ''
@@ -176,7 +178,7 @@ class GPS(DEVICE):
                         if self.data[3:6] == 'RMC':
                             rmc = self.data
                             if self.is_fixed():
-                                if 'last_fix' in t:
+                                if 'last_fix' in t or 'follow_me' in t:
                                     self.last_fix()
                                 if 'sync_rtc' in t:
                                     self.sync_rtc()
@@ -186,9 +188,14 @@ class GPS(DEVICE):
             self.data = rmc[:-2]
             await self.log()
         self.uart.deinit()
-        self.off()
-        u2_lock.release()
-        await asyncio.sleep(5)
-        await u2_lock.acquire()
-        self.on()
-        u2_lock.release()
+        if not 'follow_me' in t:
+            self.off()
+            u2_lock.release()  # Releases uart2 and rs232 transceiver.
+            u4_lock.release()  # Releases uart4 and rs232 transceiver.
+            await asyncio.sleep(5)  # Waits for uart2 and uart4 tasks being executed.
+            await u2_lock.acquire()  # Locks down uart2 and rs232 transceiver.
+            await u4_lock.acquire()  # Locks down uart4 and rs232 transceiver.
+            if self.gpio.value() < 1:
+                self.on()  # Power on if off.
+        u2_lock.release()  # Releases uart2 and rs232 transceiver.
+        u4_lock.release()  # Releases uart4 and rs232 transceiver.

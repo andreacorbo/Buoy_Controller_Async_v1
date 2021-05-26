@@ -26,7 +26,7 @@
 			"Windspeed_3":0.1765,
 			"Winddirection_0":0.1,
 			"Temp_Conv_0":0.025,
-			"Temp_Conv_1":50,
+			"Temp_Conv_1":-50,
 			"Press_Conv_0":0.02,
 			"Press_Conv_1":950,
 			"Hum_Conv_0":0.0125,

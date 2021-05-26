@@ -4,7 +4,7 @@
 import uasyncio as asyncio
 import time
 import pyb
-from tools.utils import log, log_data, unix_epoch, iso8601, timesync
+from tools.utils import log, log_data, unix_epoch, iso8601, timesync, u4_lock
 from configs import dfl
 from device import DEVICE
 
@@ -22,7 +22,8 @@ class CTD(DEVICE):
         self.warmup_interval = self.config['Warmup_Interval']
 
     async def startup(self, **kwargs):
-        await timesync.wait()
+        await u4_lock.acquire()
+        #await timesync.wait()
         self.on()
         self.init_uart()
         await asyncio.sleep(1)  # Waits for uart getting ready.
@@ -42,6 +43,7 @@ class CTD(DEVICE):
             log(self.__qualname__, 'successfully initialised')
         self.uart.deinit()
         self.off()
+        u4_lock.release()
 
     # Decodes chars in order to check wether a connection issue has occurred.
     def decoded(self):
@@ -153,7 +155,7 @@ class CTD(DEVICE):
         if await self.scan():  # Gets one sample.
             self.format_data()
             if float(self.data[8]) < 1:  # Checks conductivity to
-                CMD = 'ZERO'                         # esablish if in air.
+                CMD = 'ZERO'             # establish if in air.
                 await self.swriter.awrite(CMD + ENTER)
                 if await self.reply():
                     if self.data.startswith(CMD):
@@ -168,6 +170,8 @@ class CTD(DEVICE):
         for _ in self.data[:-2].split(' '):
             if _ != '':
                 tmp.append(_)
+        tmp[9] = '{:5.3f}'.format(self.config['Ctd']['Fl_M'] * float(tmp[9]) + self.config['Ctd']['Fl_Q'])  # Fluorescence calibration.
+        tmp[10] = '{:5.3f}'.format(self.config['Ctd']['Ph_M'] * float(tmp[10]) + self.config['Ctd']['Ph_Q'])  # pH calibration.
         self.data = tmp
 
     # Gets one sample.
@@ -199,7 +203,8 @@ class CTD(DEVICE):
         )
 
     async def main(self):
-        self.on()
+        await u4_lock.acquire()  # Prevents gps access while rs232 transceiver is
+        self.on()                # in use.
         self.init_uart()
         await asyncio.sleep(1)
         if self.config['Ctd']['Wait_for_Enter'] == 1:
@@ -217,6 +222,7 @@ class CTD(DEVICE):
         pyb.LED(3).off()
         self.uart.deinit()
         self.off()
+        u4_lock.release()  # Releases gps.
 
 class UV(DEVICE):
 

@@ -4,6 +4,7 @@
 import uasyncio as asyncio
 from primitives.message import Message
 from primitives.semaphore import Semaphore
+from primitives.queue import Queue
 import time
 import os
 import json
@@ -20,6 +21,7 @@ timesync = asyncio.Event()  # Gps fix event.
 scheduling = asyncio.Event()  # Scheduler event.
 disconnect = asyncio.Event()  # Modem event.
 u2_lock = asyncio.Lock() # Uart 2 lock.
+u4_lock = asyncio.Lock() # Uart 4 lock.
 
 def welcome_msg():
     print(

@@ -160,7 +160,7 @@ class METEO(DEVICE):
         def samples():
             i=0
             while i < len(self.data):
-                yield int(self.data[10+i:14+i]) * float(self.config['Meteo']['Temp_Conv_0']) - float(self.config['Meteo']['Temp_Conv_1'])
+                yield int(self.data[10+i:14+i]) * float(self.config['Meteo']['Temp_Conv_0']) + float(self.config['Meteo']['Temp_Conv_1'])
                 i += self.data_length
         try:
             avg = sum(samples()) / self.records
@@ -173,7 +173,7 @@ class METEO(DEVICE):
         def samples():
             i=0
             while i < len(self.data):
-                yield int(self.data[15+i:19+i]) * float(self.config['Meteo']['Press_Conv_0']) + float(self.config['Meteo']['Press_Conv_1'])
+                yield int(self.data[20+i:24+i]) * float(self.config['Meteo']['Press_Conv_0']) + float(self.config['Meteo']['Press_Conv_1'])
                 i += self.data_length
         try:
             avg = sum(samples()) / self.records
@@ -186,7 +186,7 @@ class METEO(DEVICE):
         def samples():
             i=0
             while i < len(self.data):
-                yield int(self.data[20+i:24+i]) * float(self.config['Meteo']['Hum_Conv_0'])
+                yield int(self.data[15+i:19+i]) * float(self.config['Meteo']['Hum_Conv_0'])
                 i += self.data_length
         try:
             avg = sum(samples()) / self.records
@@ -249,7 +249,7 @@ class METEO(DEVICE):
             )
 
     async def main(self):
-        await u2_lock.acquire()
+        await u2_lock.acquire()  # Gets exclusive access to uart shared with gps.
         self.on()
         self.init_uart()
         await asyncio.sleep(self.warmup_interval)
@@ -276,7 +276,7 @@ class METEO(DEVICE):
         pyb.LED(3).off()
         self.uart.deinit()
         self.off()
-        u2_lock.release()
+        u2_lock.release()  # Releases uart shared with gps.
 
     async def manual(self):
         self.on()

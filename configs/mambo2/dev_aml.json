@@ -15,11 +15,16 @@
 		"Warmup_Interval":30,
 		"Samples":1,
 		"Sample_Rate":1,
-		"String_Label":"$METRECXR",
+		"String_Label":"$METRECX",
 		"Ctd":{
 			"Prompt_Timeout":60,
-			"Wait_for_Enter":1
-		}
+			"Wait_for_Enter":1,
+			"Ph_M":-9.914,
+			"Ph_Q":29.759,
+			"Fl_M":0,
+			"Fl_Q":0
+		},
+		"Serial_Number":"50228"
 	},
 	"UV":{
 		"Warmup_Interval":300

@@ -1,0 +1,34 @@
+{
+	"MODEM":{
+		"Uart":{
+			"Baudrate":9600,
+			"Bits":8,
+			"Parity":"None",
+			"Stop":1,
+			"Timeout":10,
+			"Timeout_Char":0,
+			"Flow_Control":0,
+			"Read_Buf_Len":2048,
+			"Write_Buf_Len":1024,
+			"Read_Char_Attempt":10
+		},
+		"Warmup_Interval":-1,
+		"Modem":{
+			"At_Timeout":20,
+			"At_Delay":2,
+			"Call_Attempt":5,
+			"Call_Delay":10,
+			"Call_Timeout":120,
+			"Init_Timeout":120,
+			"Sms_Timeout":30,
+			"Init_Ats":["ATE1\r","ATI\r","AT+IPR=9600\r","AT+CBST=7,0,1\r","AT+CREG=0\r","AT+CSQ\r","AT+COPS=1,2,22201\r","ATS0=1\r","AT&W\r"],
+			"Call_Ats":["ATD3284135433\r"],
+			"Hangup_Ats":["+++","ATH\r"],
+			"Sms_Ats1":["AT+CMGF=1\r", "AT+CSCS=\"GSM\"\r"],
+			"Sms_Ats2":"AT+CMGS=",
+			"Ymodem_Delay":2,
+			"Keep_Alive":1
+		},
+		"Serial_Number":"748858593626696"
+	}
+}

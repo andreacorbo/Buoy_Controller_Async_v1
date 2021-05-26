@@ -29,8 +29,8 @@ class MODEM(DEVICE, YMODEM):
         self.call_timeout = self.config['Modem']['Call_Timeout']
         self.ymodem_delay = self.config['Modem']['Ymodem_Delay']
         self.keep_alive = self.config['Modem']['Keep_Alive']
-        self.sms_ats = self.config['Modem']['Sms_Ats']
-        self.sms_to = self.config['Modem']['Sms_To']
+        self.sms_ats1 = self.config['Modem']['Sms_Ats1']
+        self.sms_ats2 = self.config['Modem']['Sms_Ats2']
         self.sms_timeout = self.config['Modem']['Sms_Timeout']
         self.trigger = trigger
         YMODEM.__init__(self, self.agetc, self.aputc)
@@ -188,30 +188,31 @@ class MODEM(DEVICE, YMODEM):
             #self.disconnect.set()  # Restores user interaction.
             self.trigger.set(True)
 
+
     # Sends an sms.
-    async def sms(self, text):
+    async def sms(self, text, num):
         async with self.semaphore:
             self.disconnect.clear()
             self.trigger.set(False)
             self.init_uart()
             self.reply_timeout = self.at_timeout
             log(self.__qualname__,'sending sms...')
-            for at in self.sms_ats:
+            for at in self.sms_ats1:
                 if not await self.cmd(at):
                     log(self.__qualname__,'sms failed', at)
                     #self.disconnect.set()
                     self.trigger.set(True)
                     return False
                 await asyncio.sleep(self.at_delay)
-            await self.swriter.awrite(self.sms_to)
+            await self.swriter.awrite(self.sms_ats2 + num + '\r')
             try:
                 self.data = await asyncio.wait_for(self.sreader.readline(), self.reply_timeout)
             except asyncio.TimeoutError:
-                log(self.__qualname__,'sms failed', self.sms_to)
+                log(self.__qualname__,'sms failed', num)
                 #self.disconnect.set()
                 self.trigger.set(True)
                 return False
-            if self.data.startswith(self.sms_to):
+            if self.data.startswith(self.sms_ats2 + num + '\r'):
                 verbose(self.data)
                 try:
                     self.data = await asyncio.wait_for(self.sreader.read(2), self.reply_timeout)
@@ -240,6 +241,7 @@ class MODEM(DEVICE, YMODEM):
             #self.disconnect.set()
             self.trigger.set(True)
             return False
+
 
     async def main(self, task='datacall'):
             if task == 'datacall':

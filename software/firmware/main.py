@@ -70,9 +70,13 @@ async def listner(trigger):
 
 # Sends an sms as soon is generated.
 async def alerter(txt):
-    await txt
-    await modem.sms(txt.value())
-    txt.clear()
+    while True:
+        await txt
+        for num in cfg.SMS_RECIPIENTS:
+            await modem.sms(txt.value(), num)
+            await asyncio.sleep(0.5)
+        txt.clear()
+        await asyncio.sleep(0)
 
 # Launches devs tasks.
 async def launcher(obj,tasks):
