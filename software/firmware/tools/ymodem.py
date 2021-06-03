@@ -564,11 +564,11 @@ class YMODEM:
             cksum = msg.value()
             msg.clear()
             await asyncio.sleep(0.1)
+            ec = 0
             while True:
                 #
                 # Sends filename packet.
                 #
-                ec = 0
                 while True:
                     if ec > self.retry:
                         verbose('TOO MANY ERRORS, ABORTING...')
@@ -582,7 +582,6 @@ class YMODEM:
                 #
                 # Waits for reply to filename paket.
                 #
-                ec = 0
                 cc = 0  # Cancel counter.
                 ackd = 0  # Acked.
                 while True:

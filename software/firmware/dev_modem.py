@@ -107,7 +107,7 @@ class MODEM(DEVICE, YMODEM):
         try:
             return await asyncio.wait_for(self.sreader.readexactly(size), timeout)
         except asyncio.TimeoutError:
-            return
+            return False
 
     # Sends n-bytes.
     async def aputc(self, data, timeout=1):

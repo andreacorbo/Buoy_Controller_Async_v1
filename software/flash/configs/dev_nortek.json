@@ -1,0 +1,27 @@
+{
+	"ADCP":{
+		"Uart":{
+			"Baudrate":9600,
+			"Bits":8,
+			"Parity":"None",
+			"Stop":1,
+			"Timeout":10,
+			"Timeout_Char":10,
+			"Flow_Control":0,
+			"Read_Buf_Len":1024,
+			"Write_Buf_Len":1024,
+			"Read_Char_Attempt":10
+		},
+		"Warmup_Interval":-1,
+		"Samples":60,
+		"Sample_Rate":1,
+		"String_Label":"$NORTEK",
+		"Adcp":{
+			"Break_Timeout":60,
+			"Deployment_Config":"aquadopp1.pcf",
+			"Instrument_Config":"aquadopp1.cfg",
+			"Deployment_Delay":30
+		},
+		"Serial_Number":"P205-4/05"
+	}
+}

@@ -1,0 +1,25 @@
+{
+	"SYSMON":{
+		"Warmup_Interval":-1,
+		"Samples":10,
+		"Sample_Rate":10,
+		"String_Label":"$MSTAT",
+		"Adc":{
+			"Bit":12,
+			"Channels":{
+				"Battery_Level":{
+					"Ch":10,
+					"Calibration_Coeff":4.75
+				},
+				"Current_Level":{
+					"Ch":11,
+					"Calibration_Coeff":33.3333
+				},
+				"Ambient_Temperature":{
+					"Ch":13,
+					"Calibration_Coeff":1
+				}
+			}
+		}
+	}
+}

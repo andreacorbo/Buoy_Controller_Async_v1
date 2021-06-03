@@ -1,0 +1,32 @@
+{
+	"CTD":{
+		"Uart":{
+			"Baudrate":9600,
+			"Bits":8,
+			"Parity":"None",
+			"Stop":1,
+			"Flow_Control":0,
+			"Timeout":250,
+			"Timeout_Char":250,
+			"Read_Buf_Len":256,
+			"Write_Buf_Len":256,
+			"Read_Char_Attempt":10
+		},
+		"Warmup_Interval":30,
+		"Samples":1,
+		"Sample_Rate":1,
+		"String_Label":"$METRECX",
+		"Ctd":{
+			"Prompt_Timeout":60,
+			"Wait_for_Enter":1,
+			"Ph_M":-9.47,
+			"Ph_Q":28.60,
+			"Fl_M":0,
+			"Fl_Q":0
+		},
+		"Serial_Number":"50229"
+	},
+	"UV":{
+		"Warmup_Interval":300
+	}
+}
