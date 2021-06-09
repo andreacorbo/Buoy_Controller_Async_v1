@@ -173,8 +173,8 @@ class CTD(DEVICE):
         for _ in self.data[:-2].split(' '):
             if _ != '':
                 tmp.append(_)
-        tmp[9] = '{:5.3f}'.format(self.config['Ctd']['Fl_M'] * float(tmp[9]) + self.config['Ctd']['Fl_Q'])  # Fluorescence calibration.
-        tmp[10] = '{:5.3f}'.format(self.config['Ctd']['Ph_M'] * float(tmp[10]) + self.config['Ctd']['Ph_Q'])  # pH calibration.
+        tmp[6] = '{:5.3f}'.format(self.config['Ctd']['Fl_M'] * float(tmp[6]) + self.config['Ctd']['Fl_Q'])  # Fluorescence calibration.
+        tmp[7] = '{:5.3f}'.format(self.config['Ctd']['Ph_M'] * float(tmp[7]) + self.config['Ctd']['Ph_Q'])  # pH calibration.
         self.data = tmp
 
     # Gets one sample.
