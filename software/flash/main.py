@@ -1,6 +1,6 @@
 # BuoyControllerAsync v1.1
 # main.py
-# MIT license; Copyright (c) 2020 Andrea Corbo
+# MIT license; Copyright (c) 2021 Andrea Corbo
 
 import uasyncio as asyncio
 from sched.sched import schedule
@@ -17,15 +17,11 @@ from configs import dfl, cfg
 
 devs = []
 
-async def hearthbeat():
-    await scheduling.wait()
-    while 1:
-        print('alive!')
-        await asyncio.sleep(1)
-
+# Restarts the system.
 async def restart():
     machine.reset()
 
+# Forces garbage collection.
 async def cleaner():
     while True:
         gc.collect()
@@ -118,7 +114,6 @@ async def main():
     # Initialises the scheduler.
     msg(' START SCHEDULER ')
     scheduling.set()
-    #disconnect.set()
     for c in cfg.CRON:
         asyncio.create_task(schedule(
             launcher,
