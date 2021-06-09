@@ -22,8 +22,11 @@ class CTD(DEVICE):
         self.warmup_interval = self.config['Warmup_Interval']
 
     async def startup(self, **kwargs):
-        await u4_lock.acquire()
-        #await timesync.wait()
+        try:
+            await asyncio.wait_for(u4_lock.acquire(), self.config['Uart_Timeout']) # Locks down uart4 and rs232 transceiver.
+        except asyncio.TimeoutError:
+            log(self.__qualname__, 'unable to acquire lock on uart', type='e')
+            return False
         self.on()
         self.init_uart()
         await asyncio.sleep(1)  # Waits for uart getting ready.
@@ -203,7 +206,11 @@ class CTD(DEVICE):
         )
 
     async def main(self):
-        await u4_lock.acquire()  # Prevents gps access while rs232 transceiver is
+        try:
+            await asyncio.wait_for(u4_lock.acquire(), self.config['Uart_Timeout']) # Locks down uart4 and rs232 transceiver.
+        except asyncio.TimeoutError:
+            log(self.__qualname__, 'unable to acquire lock on uart', type='e')
+            return False
         self.on()                # in use.
         self.init_uart()
         await asyncio.sleep(1)

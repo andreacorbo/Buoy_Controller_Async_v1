@@ -1,0 +1,45 @@
+Connecting to /dev/ttyACM0...
+Connecting to /dev/ttyACM0...
+Task exception wasn't retrieved
+future: <Task> coro= <generator object 'main' at 20010f70>
+Traceback (most recent call last):
+  File "uasyncio/core.py", line 176, in run_until_complete
+  File "dev_gps.py", line 160, in main
+MemoryError: memory allocation failed, allo
+2021-06-07T08:35:01Z  UV      on
+Task exception wasn't retrieved
+future: <Task> coro= <generator object 'main' at 2000cb70>
+Traceback (most recent call last):
+  File "uasyncio/core.py", line 176, in run_until_complete
+  File "dev_nortek.py", line 612, in main
+  File "device.py", line 65, in init_uart
+  File "tools/utils.py", line 112, in log
+MemoryError: memory allocation failed, allo
+Connecting to /dev/ttyACM0...
+Connecting to /dev/ttyACM0...
+Task exception wasn't retrieved
+future: <Task> coro= <generator object 'launcher' at 2000dc90>
+Traceback (most recent call last):
+  File "uasyncio/core.py", line 176, in run_until_complete
+  File "main.py", line 87, in launcher
+MemoryError: memory allocation failed, allocating 108 bytes
+Task exception wasn't retrieved
+future: <Task> coro= <generator object 'launcher' at 2000dc90>
+Traceback (most recent call last):
+  File "uasyncio/core.py", line 176, in run_until_complete
+  File "main.py", line 85, in launcher
+MemoryError: memory allocation failed, allo
+2021-06-07T08:40:01Z  UV      off
+Task exception wasn't retrieved
+future: <Task> coro= <generator object 'launcher' at 2000dc90>
+Traceback (most recent call last):
+  File "uasyncio/core.py", line 176, in run_until_complete
+  File "main.py", line 87, in launcher
+MemoryError: memory allocation failed, allo
+Task exception wasn't retrieved
+future: <Task> coro= <generator object 'launcher' at 2000dc90>
+Traceback (most recent call last):
+  File "uasyncio/core.py", line 176, in run_until_complete
+  File "main.py", line 87, in launcher
+MemoryError: memory allocation failed, allo
+Connecting to /dev/ttyACM0...

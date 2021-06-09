@@ -114,51 +114,22 @@ class GPS(DEVICE):
             # log(self.__qualname__, 'communication error') obviously useless!!!
             return False
 
-    '''
     async def main(self, task='log'):
         if isinstance(task,str):
             t=[]
             t.append(task)
         else:
             t = task
-        self.on()
-        self.init_uart()
-        self.fixed.clear()
-        rmc = ''
-        t0 = time.time()
-        while time.time() - t0 < self.warmup_interval:
-            try:
-                self.data = await asyncio.wait_for(self.sreader.readline(), self.warmup_interval)
-            except asyncio.TimeoutError:
-                self.data = b''
-                log(self.__qualname__, 'no data received', type='e')
-                break
-            if self.decoded():
-                if self.data.startswith('$') and self.data.endswith('\r\n') and self.data.count('$') == 1:
-                    if await self.verify_checksum():
-                        if self.data[3:6] == 'RMC':
-                            rmc = self.data
-                            if self.is_fixed():
-                                if 'last_fix' in t:
-                                    self.last_fix()
-                                if 'sync_rtc' in t:
-                                    self.sync_rtc()
-                                break
-            await asyncio.sleep(0)
-        if 'log' in t and rmc:
-            self.data = rmc[:-2]
-            await self.log()
-        self.uart.deinit()
-        self.off()
-    '''
-    async def main(self, task='log'):
-        if isinstance(task,str):
-            t=[]
-            t.append(task)
-        else:
-            t = task
-        await u2_lock.acquire()  # Locks down uart2 and rs232 transceiver.
-        await u4_lock.acquire()  # Locks down uart4 and rs232 transceiver.
+        try:
+            await asyncio.wait_for(u2_lock.acquire(), 10) # Locks down uart2 and rs232 transceiver.
+        except asyncio.TimeoutError:
+            log(self.__qualname__, 'unable to acquire lock on uart2', type='e')
+            return False
+        try:
+            await asyncio.wait_for(u4_lock.acquire(), 10) # Locks down uart4 and rs232 transceiver.
+        except asyncio.TimeoutError:
+            log(self.__qualname__, 'unable to acquire lock on uart4', type='e')
+            return False
         if self.gpio.value() < 1:
             self.on()
         self.init_uart()
@@ -184,17 +155,26 @@ class GPS(DEVICE):
                                     self.sync_rtc()
                                 break
             await asyncio.sleep(0)
-        if 'log' in t and rmc:
-            self.data = rmc[:-2]
-            await self.log()
-        self.uart.deinit()
-        if not 'follow_me' in t:
+        if 'log' in t:
+            if rmc:
+                self.data = rmc[:-2]
+                await self.log()
+            self.uart.deinit()
+        #if not 'follow_me' in t:
             self.off()
             u2_lock.release()  # Releases uart2 and rs232 transceiver.
             u4_lock.release()  # Releases uart4 and rs232 transceiver.
-            await asyncio.sleep(5)  # Waits for uart2 and uart4 tasks being executed.
-            await u2_lock.acquire()  # Locks down uart2 and rs232 transceiver.
-            await u4_lock.acquire()  # Locks down uart4 and rs232 transceiver.
+            await asyncio.sleep(2)  # Waits for uart2 and uart4 tasks being executed.
+            try:
+                await asyncio.wait_for(u2_lock.acquire(), 160) # Locks down uart2 and rs232 transceiver.
+            except asyncio.TimeoutError:
+                log(self.__qualname__, 'unable to acquire lock on uart2', type='e')
+                return False
+            try:
+                await asyncio.wait_for(u4_lock.acquire(), 160) # Locks down uart4 and rs232 transceiver.
+            except asyncio.TimeoutError:
+                log(self.__qualname__, 'unable to acquire lock on uart4', type='e')
+                return False
             if self.gpio.value() < 1:
                 self.on()  # Power on if off.
         u2_lock.release()  # Releases uart2 and rs232 transceiver.

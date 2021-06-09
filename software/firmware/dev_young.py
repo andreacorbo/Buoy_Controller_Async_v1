@@ -22,7 +22,11 @@ class METEO(DEVICE):
         self.records = 0
 
     async def startup(self, **kwargs):
-        await u2_lock.acquire()
+        try:
+            await asyncio.wait_for(u2_lock.acquire(), self.config['Uart_Timeout']) # Locks down uart2 and rs232 transceiver.
+        except asyncio.TimeoutError:
+            log(self.__qualname__, 'unable to acquire lock on uart', type='e')
+            return False
         self.on()
         self.init_uart()
         if await self.is_ready():
@@ -41,7 +45,7 @@ class METEO(DEVICE):
 
     async def is_ready(self):
         try:
-            line = await asyncio.wait_for(self.sreader.readline(), 10)
+            line = await asyncio.wait_for(self.sreader.readline(), 30)
         except asyncio.TimeoutError:
             log(self.__qualname__, 'no answer')
             return False
@@ -249,7 +253,11 @@ class METEO(DEVICE):
             )
 
     async def main(self):
-        await u2_lock.acquire()  # Gets exclusive access to uart shared with gps.
+        try:
+            await asyncio.wait_for(u2_lock.acquire(), self.config['Uart_Timeout']) # Locks down uart2 and rs232 transceiver.
+        except asyncio.TimeoutError:
+            log(self.__qualname__, 'unable to acquire lock on uart', type='e')
+            return False
         self.on()
         self.init_uart()
         await asyncio.sleep(self.warmup_interval)
@@ -277,32 +285,3 @@ class METEO(DEVICE):
         self.uart.deinit()
         self.off()
         u2_lock.release()  # Releases uart shared with gps.
-
-    async def manual(self):
-        self.on()
-        self.init_uart()
-        await asyncio.sleep(self.warmup_interval)
-        pyb.LED(3).on()
-        while True:
-            self.data = b''
-            t0 = time.time()
-            while not self._timeout(t0, self.timeout):
-                try:
-                    line = await asyncio.wait_for(self.sreader.readline(), self.timeout)
-                except asyncio.TimeoutError:
-                    log(self.__qualname__, 'no data received', type='e')
-                    break
-                if not self.decode(line):
-                    await asyncio.sleep(0)
-                    continue
-                if len(line) == self.data_length:
-                    self.data += line
-                if len(self.data) == self.samples * self.data_length:
-                    break
-                await asyncio.sleep(0)
-            self.records = len(self.data) // self.data_length
-            if self.data:
-                await self.log()
-        pyb.LED(3).off()
-        self.uart.deinit()
-        self.off()

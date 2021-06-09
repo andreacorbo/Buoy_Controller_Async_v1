@@ -12,7 +12,8 @@
 			"Write_Buf_Len":0,
 			"Read_Char_Attempt":10
 		},
-		"Warmup_Interval":5,
+		"Uart_Timeout":190,
+		"Warmup_Interval":30,
 		"Samples":120,
 		"Sample_Rate":2,
 		"String_Label":"$YOUNG",

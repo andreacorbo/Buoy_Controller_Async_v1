@@ -19,14 +19,18 @@ devs = []
 
 async def hearthbeat():
     await scheduling.wait()
-    log('alive!')
-    await asyncio.sleep(0)
+    while 1:
+        print('alive!')
+        await asyncio.sleep(1)
+
+async def restart():
+    machine.reset()
 
 async def cleaner():
     while True:
         gc.collect()
         gc.threshold(gc.mem_free() // 4 + gc.mem_alloc())
-        await asyncio.sleep_ms(1000)
+        await asyncio.sleep(1)
 
 # Listens on uart / usb.
 async def listner(trigger):
@@ -103,7 +107,6 @@ async def main():
         devs.append(eval(dev.split('.')[1].lower()))
         await asyncio.sleep(0)
     await asyncio.sleep(1)  # Waits 1 second to allow devs properly power on.
-
     # Executes devs startup routines.
     init_tasks = []
     for dev in devs:
@@ -129,7 +132,7 @@ async def main():
             secs=c[-2],
             times=c[-1]
             ))
-    #asyncio.create_task(schedule(hearthbeat, hrs=None, mins=None, secs=range(0,60,2)))
+    # asyncio.create_task(schedule(restart, hrs=23, mins=56, secs=00))  # restart the system daily.
     while True:
         await asyncio.sleep(60)  # Keeps scheduler running forever.
 
@@ -139,9 +142,9 @@ welcome_msg()
 asyncio.create_task(blink(4, 1, 2000, stop_evt=timesync))  # Blue, no gps fix.
 asyncio.create_task(blink(3, 100, 1000, cancel_evt=scheduling))  # Yellow, initialisation.
 asyncio.create_task(blink(2, 1, 2000, start_evt=timesync))  # Green, operating.
+asyncio.create_task(cleaner())
 asyncio.create_task(listner(trigger))
 asyncio.create_task(alerter(alert))
-asyncio.create_task(cleaner())
 
 try:
     asyncio.run(main())
