@@ -24,8 +24,8 @@ CRON = (
     ['modem', 'datacall', None, None, None, None, range(12, 60, 30), 0, None]       # every 30 minutes start@12th minute
     )
 BUF_DAYS = 4
-DISPLACEMENT_THRESHOLD = 0.05399568 # Nautical miles: (50meters)
+DISPLACEMENT_THRESHOLD = 0.054 # Nautical miles: (100 m)
 DEBUG = False
 VERBOSE = False
 RTC_CALIBRATION = -170
-SMS_RECIPIENTS = ['+393664259612','+393664259612']
+SMS_RECIPIENTS = ['+393664259612','+393351079053']  # SOR-PCFVG '+393351079053'
